@@ -116,10 +116,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   appContainer: {
-    flex: 1,
-    width: '100%',
-    maxWidth: Platform.OS === 'web' ? 450 : '100%',
-    backgroundColor: '#fff',
-  },
+  flex: 1,
+  width: '100%',
+  // On force une largeur de téléphone standard (ex: iPhone 13)
+  maxWidth: Platform.OS === 'web' ? 390 : '100%',
+  backgroundColor: '#fff',
+  alignSelf: 'center',
+  // On ajoute un petit "overflow" pour que rien ne dépasse
+  overflow: 'hidden',
+},
 });
 
