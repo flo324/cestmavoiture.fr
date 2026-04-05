@@ -1,11 +1,13 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 
 
 export default function TabLayout() {
   return (
+    <View style={styles.webWrapper}> 
+    <View style={styles.appContainer}>
     <Tabs screenOptions={{
     headerShown: false,
     tabBarActiveTintColor: '#3498db',
@@ -101,5 +103,23 @@ export default function TabLayout() {
       <Tabs.Screen name="docs" options={{ href: null }} />
       <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
+    </View>
+  </View>
   );
 }
+
+const styles = StyleSheet.create({
+  webWrapper: {
+    flex: 1,
+    backgroundColor: '#f0f2f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appContainer: {
+    flex: 1,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 450 : '100%',
+    backgroundColor: '#fff',
+  },
+});
+
