@@ -110,20 +110,18 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   webWrapper: {
-  flex: 1,
-  backgroundColor: '#f0f2f5',
-  alignItems: 'center',
-  // SUPPRIME CETTE LIGNE :
-  // justifyContent: 'center',
-},
+    flex: 1,
+    backgroundColor: '#f0f2f5',
+    ...Platform.select({
+      web: { cursor: 'pointer' },
+      default: {},
+    }),
+  },
   appContainer: {
-  flex: 1,
-  width: '100%',
-  maxWidth: Platform.OS === 'web' ? 380 : '100%',
-  backgroundColor: '#fff',
-  // Ajoute ces lignes pour forcer le haut :
-  marginTop: 0,
-  paddingTop: 0,
-},
+    flex: 1,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 380 : '100%',
+    alignSelf: 'center', // Centre l'appli horizontalement sur web
+    backgroundColor: '#fff',
+  },
 });
-

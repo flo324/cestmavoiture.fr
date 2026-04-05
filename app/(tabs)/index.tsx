@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
-import { Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
 
 // Importation de la synchro
 import { useKilometrage } from '../../context/KilometrageContext';
@@ -175,35 +175,97 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  // --- STYLES GÉNÉRAUX ET LOGO (Adaptés Web/Vercel) ---
   container: { flex: 1, backgroundColor: '#fff' },
-  logoWhiteArea: { backgroundColor: '#fff', paddingBottom: 25, alignItems: 'center' },
-  topLogo: { flexDirection: 'row', justifyContent: 'center', paddingTop: 60, marginBottom: 10 },
-  logoPart1: { fontSize: 60, fontWeight: 'bold', color: '#3498db'},
-  logoPart2: { fontSize: 32, fontWeight: 'bold', color: '#2c3e50' },
-  logoPart3: { fontSize: 60, color: '#3498db' },
-  contentBody: { flex: 1, backgroundColor: '#f2f5f8' },
+  logoWhiteArea: { backgroundColor: '#fff', paddingBottom: 10, alignItems: 'center' },
+  topLogo: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingTop: Platform.OS === 'web' ? 20 : 60,
+    marginBottom: 10
+  },
+  logoPart1: { fontSize: Platform.OS === 'web' ? 40 : 60, fontWeight: 'bold', color: '#3498db' },
+  logoPart2: { fontSize: Platform.OS === 'web' ? 22 : 32, fontWeight: 'bold', color: '#2c3e50' },
+  logoPart3: { fontSize: Platform.OS === 'web' ? 40 : 60, color: '#3498db' },
+  contentBody: {
+    flex: 1,
+    backgroundColor: '#f2f5f8',
+    marginTop: Platform.OS === 'web' ? 0 : -20
+  },
+
+  // --- STYLES UTILISATEUR ---
   userInfoSimple: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 25, marginTop: 15 },
   avatarSimple: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#bdc3c7', justifyContent: 'center', alignItems: 'center' },
   avatarTxtSimple: { color: '#fff', fontWeight: 'bold' },
   userNameFlat: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50' },
   userSubRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   userSubTxt: { fontSize: 13, color: '#7f8c8d' },
-  kmRowSimple: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  kmTxtSimple: { fontSize: 14, fontWeight: '700', color: '#2c3e50' },
+
+  // --- GRID (BOUTONS PRINCIPAUX) ---
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 10 },
-  gridWrapper: { width: '30%', alignItems: 'center', marginBottom: 5 },
-  gridItem: { width: '100%', aspectRatio: 1, backgroundColor: '#2c3e50', borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 4, elevation: 4 },
+  gridWrapper: { width: '30%', alignItems: 'center', marginBottom: 10 },
+  gridItem: {
+    width: '100%',
+    aspectRatio: 1,
+    backgroundColor: '#2c3e50',
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
   gridTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-  gridSubText: { color: '#2c3e50', fontSize: 7.5, fontWeight: 'bold', textAlign: 'center', marginTop: 5, textTransform: 'uppercase' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  selectionCard: { width: '90%', backgroundColor: '#fff', borderRadius: 25, padding: 20 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50', marginBottom: 20, textAlign: 'center' },
-  selectionItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f2f5f8' },
-  selectionLabel: { flex: 1, marginLeft: 15, fontSize: 14, fontWeight: '600', color: '#34495e' },
-  cancelBtn: { marginTop: 15, padding: 10, alignItems: 'center' },
-  cancelBtnText: { color: '#e74c3c', fontWeight: 'bold' },
-  cameraOverlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 50 },
-  captureBtn: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#fff', padding: 6 },
-  captureBtnInternal: { flex: 1, borderRadius: 40, borderWidth: 3, borderColor: '#2c3e50' },
-  closeCamera: { position: 'absolute', top: 50, right: 25 }
+  gridSubText: {
+    color: '#2c3e50',
+    fontSize: 7.5,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 5,
+    textTransform: 'uppercase'
+  },
+
+  // --- STYLES DES MODALS (Caméra et Sélection) ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  selectionCard: {
+    width: '90%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '80%'
+  },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  selectionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee'
+  },
+  selectionLabel: { fontSize: 16, marginLeft: 15, flex: 1 },
+  cancelBtn: { marginTop: 20, padding: 15, alignItems: 'center' },
+ 
+  // --- CAMERA ---
+  cameraOverlay: { flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end', alignItems: 'center' },
+  captureBtn: { marginBottom: 30, width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' },
+  captureBtnInternal: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' },
+  closeCamera: { position: 'absolute', top: 40, right: 20 },
+    // --- AJOUT DES STYLES MANQUANTS ---
+  kmRowSimple: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4
+  },
+  kmTxtSimple: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#2c3e50'
+  },
+  cancelBtnText: {
+    color: '#e74c3c', // Rouge pour le bouton annuler
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
 });
