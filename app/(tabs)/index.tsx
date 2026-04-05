@@ -169,10 +169,7 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      <TouchableOpacity style={styles.scanButton} onPress={handleScanPress}>
-        <Ionicons name="camera-outline" size={24} color="#fff" />
-        <Text style={styles.scanButtonText}>SCAN EXPRESS</Text>
-      </TouchableOpacity>
+      
     </SafeAreaView>
   );
 }
@@ -198,8 +195,6 @@ const styles = StyleSheet.create({
   gridItem: { width: '100%', aspectRatio: 1, backgroundColor: '#2c3e50', borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 4, elevation: 4 },
   gridTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
   gridSubText: { color: '#2c3e50', fontSize: 7.5, fontWeight: 'bold', textAlign: 'center', marginTop: 5, textTransform: 'uppercase' },
-  scanButton: { position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: '#e74c3c', paddingHorizontal: 20, height: 50, borderRadius: 25, flexDirection: 'row', alignItems: 'center', elevation: 10 },
-  scanButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14, marginLeft: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   selectionCard: { width: '90%', backgroundColor: '#fff', borderRadius: 25, padding: 20 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50', marginBottom: 20, textAlign: 'center' },

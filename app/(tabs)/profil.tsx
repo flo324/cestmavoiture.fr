@@ -100,7 +100,7 @@ export default function ProfilScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f5f8' },
-  card: { margin: 20, padding: 20, backgroundColor: '#fff', borderRadius: 15, elevation: 3 },
+  card: { margin: 20, padding: 20, backgroundColor: '#fff', borderRadius: 15, elevation: 4, marginTop: 130 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#3498db', marginBottom: 15, marginTop: 10 },
   label: { fontSize: 13, fontWeight: 'bold', color: '#7f8c8d', marginBottom: 5 },
   input: { backgroundColor: '#f9f9f9', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#eee', fontSize: 16 },
