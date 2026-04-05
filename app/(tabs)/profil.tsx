@@ -1,6 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useKilometrage } from '../../context/KilometrageContext';
 
 const USER_DATA_KEY = '@cestmavoiture_user_v2';
@@ -46,60 +56,76 @@ export default function ProfilScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Informations Personnelles</Text>
-       
-        <Text style={styles.label}>Prénom</Text>
-        <TextInput
-          style={styles.input}
-          value={userData.prenom}
-          onChangeText={(t) => setUserData({...userData, prenom: t})}
-        />
+    <KeyboardAvoidingView
+      style={styles.keyboardRoot}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Informations Personnelles</Text>
 
-        <Text style={styles.label}>Nom</Text>
-        <TextInput
-          style={styles.input}
-          value={userData.nom}
-          onChangeText={(t) => setUserData({...userData, nom: t})}
-        />
+          <Text style={styles.label}>Prénom</Text>
+          <TextInput
+            style={styles.input}
+            value={userData.prenom}
+            onChangeText={(t) => setUserData({ ...userData, prenom: t })}
+          />
 
-        <View style={styles.separator} />
+          <Text style={styles.label}>Nom</Text>
+          <TextInput
+            style={styles.input}
+            value={userData.nom}
+            onChangeText={(t) => setUserData({ ...userData, nom: t })}
+          />
 
-        <Text style={styles.sectionTitle}>Véhicule</Text>
+          <View style={styles.separator} />
 
-        <Text style={styles.label}>Modèle du véhicule</Text>
-        <TextInput
-          style={styles.input}
-          value={userData.modele}
-          onChangeText={(t) => setUserData({...userData, modele: t})}
-        />
+          <Text style={styles.sectionTitle}>Véhicule</Text>
 
-        <Text style={styles.label}>Immatriculation</Text>
-        <TextInput
-          style={styles.input}
-          value={userData.immat}
-          onChangeText={(t) => setUserData({...userData, immat: t})}
-        />
+          <Text style={styles.label}>Modèle du véhicule</Text>
+          <TextInput
+            style={styles.input}
+            value={userData.modele}
+            onChangeText={(t) => setUserData({ ...userData, modele: t })}
+          />
 
-        <Text style={styles.label}>Kilométrage actuel</Text>
-        <TextInput
-          style={styles.input}
-          value={tempKm}
-          onChangeText={setTempKm}
-          keyboardType="numeric"
-        />
+          <Text style={styles.label}>Immatriculation</Text>
+          <TextInput
+            style={styles.input}
+            value={userData.immat}
+            onChangeText={(t) => setUserData({ ...userData, immat: t })}
+          />
 
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSaveAll}>
-          <Text style={styles.saveBtnText}>ENREGISTRER TOUT</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          <Text style={styles.label}>Kilométrage actuel</Text>
+          <TextInput
+            style={styles.input}
+            value={tempKm}
+            onChangeText={setTempKm}
+            keyboardType="numeric"
+          />
+
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSaveAll}>
+            <Text style={styles.saveBtnText}>ENREGISTRER TOUT</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardRoot: { flex: 1, backgroundColor: '#f2f5f8' },
   container: { flex: 1, backgroundColor: '#f2f5f8' },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 32,
+  },
   card: { margin: 20, padding: 20, backgroundColor: '#fff', borderRadius: 15, elevation: 4, marginTop: 130 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#3498db', marginBottom: 15, marginTop: 10 },
   label: { fontSize: 13, fontWeight: 'bold', color: '#7f8c8d', marginBottom: 5 },
