@@ -2,10 +2,11 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-
+import { KilometrageProvider } from '../../context/KilometrageContext';
 
 export default function TabLayout() {
   return (
+    <KilometrageProvider>
     <View style={styles.webWrapper}> 
     <View style={styles.appContainer}>
     <Tabs screenOptions={{
@@ -105,6 +106,7 @@ export default function TabLayout() {
     </Tabs>
     </View>
   </View>
+    </KilometrageProvider>
   );
 }
 
