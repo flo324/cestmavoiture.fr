@@ -110,20 +110,20 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   webWrapper: {
-    flex: 1,
-    backgroundColor: '#f0f2f5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  flex: 1,
+  backgroundColor: '#f0f2f5',
+  alignItems: 'center',
+  // SUPPRIME CETTE LIGNE :
+  // justifyContent: 'center',
+},
   appContainer: {
   flex: 1,
   width: '100%',
-  // On force une largeur de téléphone standard (ex: iPhone 13)
-  maxWidth: Platform.OS === 'web' ? 390 : '100%',
+  maxWidth: Platform.OS === 'web' ? 380 : '100%',
   backgroundColor: '#fff',
-  alignSelf: 'center',
-  // On ajoute un petit "overflow" pour que rien ne dépasse
-  overflow: 'hidden',
+  // Ajoute ces lignes pour forcer le haut :
+  marginTop: 0,
+  paddingTop: 0,
 },
 });
 
