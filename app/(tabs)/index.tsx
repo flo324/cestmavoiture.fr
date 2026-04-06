@@ -2,7 +2,7 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ImageBackground, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
+import { Image, ImageBackground, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
 
 // Importation de la synchro
 import { useKilometrage } from '../../context/KilometrageContext';
@@ -71,29 +71,41 @@ export default function HomeScreen() {
     title,
     subtitle,
     icon,
-    color,
+    glowColor,
     route,
+    rightColumn,
   }: {
     title: string;
     subtitle: string;
     icon: React.ComponentProps<typeof Feather>['name'];
-    color: string;
+    glowColor: string;
     route: string;
+    rightColumn?: boolean;
   }) => (
-    <TouchableOpacity style={[styles.sectionTile, { borderLeftColor: color }]} onPress={() => handleGridPress(route)}>
+    <TouchableOpacity
+      style={[
+        styles.sectionTile,
+        rightColumn ? styles.sectionTileRight : styles.sectionTileLeft,
+        { shadowColor: glowColor, borderColor: glowColor },
+      ]}
+      onPress={() => handleGridPress(route)}
+    >
       <View style={styles.sectionIconWrap}>
-        <Feather name={icon} size={23} color={color} />
+        <Feather name={icon} size={22} color="#D4AF37" />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.sectionTitle}>{title}</Text>
         <Text style={styles.sectionSubtitle}>{subtitle}</Text>
       </View>
-      <MaterialCommunityIcons name="chevron-right" size={24} color="#bdc3c7" />
+      <MaterialCommunityIcons name="chevron-right" size={22} color="#D4AF37" />
     </TouchableOpacity>
   );
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.bgBase} />
+      <View style={styles.bgRadialCore} />
+      <View style={styles.bgRadialSoft} />
       <ScrollView style={styles.contentBody} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         <View style={styles.headerBlock}>
           <View>
@@ -111,12 +123,13 @@ export default function HomeScreen() {
         <View style={styles.vehicleCardShadow}>
           <ImageBackground
             source={{
-              uri: 'https://images.unsplash.com/photo-1617531653332-bd46c24f2068?auto=format&fit=crop&w=1200&q=80',
+              uri: 'https://images.unsplash.com/photo-1599901860904-17e6ed201b1a?q=80&w=600&auto=format&fit=crop',
             }}
             style={styles.vehicleCard}
             imageStyle={styles.vehicleBgImage}
           >
             <View style={styles.vehicleOverlay} />
+            <View style={styles.vehicleGlassEdge} />
             <View style={styles.vehicleContent}>
               <Text style={styles.vehicleTitlePremium}>VÉHICULE</Text>
               <Text style={styles.vehicleLinePremium}>MODÈLE: Peugeot 308 (T9)</Text>
@@ -134,42 +147,45 @@ export default function HomeScreen() {
             title="MAINTENANCE"
             subtitle="Entretien, révisions, interventions"
             icon="tool"
-            color="#d7b26a"
+            glowColor="#D4AF37"
             route="/entretien"
           />
           <SectionTile
             title="DOCUMENTS"
             subtitle="Permis, carte grise, pièces"
             icon="folder"
-            color="#d7b26a"
+            glowColor="#00F2FF"
+            rightColumn
             route="/docs"
           />
           <SectionTile
             title="COMPTES & FACTURES"
             subtitle="Suivi dépenses et reçus"
             icon="file-text"
-            color="#d7b26a"
+            glowColor="#D4AF37"
             route="/factures"
           />
           <SectionTile
             title="HISTORIQUE D'USAGE"
             subtitle="Statistiques et timeline"
             icon="bar-chart-2"
-            color="#d7b26a"
+            glowColor="#00F2FF"
+            rightColumn
             route="/st"
           />
           <SectionTile
             title="ASSISTANCE & PANNES"
             subtitle="Alertes, incidents, dépannage"
             icon="alert-triangle"
-            color="#d7b26a"
+            glowColor="#D4AF37"
             route="/panne"
           />
           <SectionTile
             title="OPTIONS & ÉQUIPEMENTS"
             subtitle="Pneus, phares, batterie"
             icon="settings"
-            color="#d7b26a"
+            glowColor="#00F2FF"
+            rightColumn
             route="/pneus"
           />
         </View>
@@ -179,10 +195,34 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#0A0E11' },
+  bgBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0A0E11',
+  },
+  bgRadialCore: {
+    position: 'absolute',
+    top: -180,
+    alignSelf: 'center',
+    width: 620,
+    height: 620,
+    borderRadius: 310,
+    backgroundColor: '#1A1F25',
+    opacity: 0.35,
+  },
+  bgRadialSoft: {
+    position: 'absolute',
+    top: -60,
+    alignSelf: 'center',
+    width: 480,
+    height: 480,
+    borderRadius: 240,
+    backgroundColor: '#1A1F25',
+    opacity: 0.22,
+  },
   contentBody: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
+    backgroundColor: 'transparent',
     paddingTop: Platform.OS === 'web' ? 20 : 50,
     paddingHorizontal: 16,
   },
@@ -195,12 +235,12 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 24,
     fontWeight: '900',
-    color: '#3498db',
+    color: '#e9edf2',
   },
   userIdentity: {
     marginTop: 4,
     fontSize: 12,
-    color: '#6c7a89',
+    color: '#95a1ad',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -230,10 +270,10 @@ const styles = StyleSheet.create({
   vehicleCardShadow: {
     borderRadius: 26,
     marginBottom: 14,
-    shadowColor: '#0a1020',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
     elevation: 10,
   },
   vehicleCard: {
@@ -241,15 +281,25 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     overflow: 'hidden',
     justifyContent: 'center',
-    backgroundColor: '#0f1a2f',
+    backgroundColor: '#000000',
   },
   vehicleBgImage: {
-    opacity: 0.22,
+    opacity: 0.1,
     resizeMode: 'cover',
+    width: '62%',
+    alignSelf: 'flex-end',
   },
   vehicleOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(7, 15, 30, 0.72)',
+    backgroundColor: 'rgba(0, 0, 0, 0.68)',
+  },
+  vehicleGlassEdge: {
+    position: 'absolute',
+    top: 0,
+    left: 12,
+    right: 12,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   vehicleContent: {
     paddingHorizontal: 18,
@@ -258,19 +308,22 @@ const styles = StyleSheet.create({
   vehicleTitlePremium: {
     fontSize: 20,
     fontWeight: '900',
-    color: '#e2c27d',
+    color: '#D4AF37',
     letterSpacing: 1,
     marginBottom: 10,
   },
   vehicleLinePremium: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#f2d49a',
+    color: '#D4AF37',
     marginBottom: 6,
   },
   sectionsWrap: {
     marginTop: 8,
     gap: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   pendingHint: {
     marginTop: 4,
@@ -295,25 +348,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   sectionTile: {
-    backgroundColor: '#0f3b46',
+    width: '48%',
+    backgroundColor: '#111111',
     borderRadius: 18,
     paddingVertical: 16,
     paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderLeftWidth: 6,
-    borderWidth: 1,
-    borderColor: '#1d5966',
+    minHeight: 120,
+    borderWidth: 0.5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  sectionTileLeft: {
+    shadowColor: '#D4AF37',
+  },
+  sectionTileRight: {
+    shadowColor: '#00F2FF',
   },
   sectionIconWrap: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#124957',
+    backgroundColor: '#171717',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginBottom: 10,
   },
-  sectionTitle: { fontSize: 15, fontWeight: '900', color: '#f6e3b4' },
-  sectionSubtitle: { marginTop: 2, fontSize: 12, color: '#d5e6ea', fontWeight: '600' },
+  sectionTitle: { fontSize: 14, fontWeight: '600', color: '#e7cea2' },
+  sectionSubtitle: { marginTop: 4, fontSize: 11, color: '#f7f5ef', fontWeight: '400' },
 });

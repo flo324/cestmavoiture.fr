@@ -1,11 +1,33 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { Tabs } from 'expo-router';
+import { useRouter } from 'expo-router';
+import React from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { EntretienProvider } from '../../context/EntretienContext';
 import { KilometrageProvider } from '../../context/KilometrageContext';
+import { useScan } from '../../context/ScanContext';
 
 export default function TabLayout() {
+  const router = useRouter();
+  const { setCapturedImageForSelection } = useScan();
+
+  const handleGlobalScan = async () => {
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+    if (!granted) return;
+
+    const photo = await ImagePicker.launchCameraAsync({
+      quality: 0.7,
+      allowsEditing: true,
+    });
+    if (photo.canceled || !photo.assets?.[0]) return;
+    const imageUri = photo.assets[0].uri ?? '';
+    if (!imageUri) return;
+    setCapturedImageForSelection({ uri: imageUri, createdAt: Date.now() });
+    router.replace('/(tabs)');
+  };
+
   return (
     <KilometrageProvider>
     <EntretienProvider>
@@ -13,17 +35,17 @@ export default function TabLayout() {
     <View style={styles.appContainer}>
     <Tabs screenOptions={{
     headerShown: false,
-    tabBarActiveTintColor: '#1aa6a6',
-    tabBarInactiveTintColor: '#7f8c8d',
+    tabBarActiveTintColor: '#D4AF37',
+    tabBarInactiveTintColor: '#8b949e',
     tabBarStyle: (({
-      height: 72,
-      paddingBottom: 8,
+      height: 78,
+      paddingBottom: 10,
       paddingTop: 6,
-      backgroundColor: '#fff',
+      backgroundColor: '#0A0E11',
       borderTopWidth: 0,
-      elevation: 5,
+      elevation: 14,
       position: 'absolute',
-      overflow: 'visible', // 👈 L'astuce est dans les parenthèses autour de l'objet
+      overflow: 'visible',
     } as any)),
 }}>
       {/* 1. LES SEULS BOUTONS VISIBLES EN BAS */}
@@ -43,11 +65,12 @@ export default function TabLayout() {
               {...props}
               activeOpacity={0.85}
               style={styles.scanBtnWrap}
+              onPress={handleGlobalScan}
             >
               <View style={styles.scanBtnInner}>
                 <Ionicons name="scan" size={30} color="#fff" />
+                <Text style={styles.scanTextInside}>SCAN</Text>
               </View>
-              <Text style={styles.scanBtnTxt}>SCAN</Text>
             </TouchableOpacity>
           ),
         }}
@@ -86,7 +109,7 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   webWrapper: {
     flex: 1,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: '#0A0E11',
     ...Platform.select({
       web: { cursor: 'pointer' },
       default: {},
@@ -97,34 +120,35 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: Platform.OS === 'web' ? 380 : '100%',
     alignSelf: 'center', // Centre l'appli horizontalement sur web
-    backgroundColor: '#fff',
+    backgroundColor: '#0A0E11',
   },
   scanBtnWrap: {
-    top: -24,
+    top: -28,
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 96,
+    minWidth: 108,
   },
   scanBtnInner: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: '#18b7b7',
-    borderWidth: 4,
-    borderColor: '#d8f8f8',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#00AEB8',
+    borderWidth: 3,
+    borderColor: '#aaf8ff',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 10,
-    shadowColor: '#0f8e8e',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.38,
-    shadowRadius: 9,
+    elevation: 16,
+    shadowColor: '#00F2FF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.65,
+    shadowRadius: 18,
   },
-  scanBtnTxt: {
-    marginTop: 4,
-    color: '#18b7b7',
-    fontSize: 11,
+  scanTextInside: {
+    marginTop: 1,
+    color: '#ffffff',
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 });
