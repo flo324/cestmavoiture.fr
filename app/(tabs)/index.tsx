@@ -6,18 +6,18 @@ import { Animated, Platform, SafeAreaView, ScrollView, StyleSheet, Text, Touchab
 
 // Importation de la synchro
 import { useKilometrage } from '../../context/KilometrageContext';
+import { useScan } from '../../context/ScanContext';
 
 const USER_DATA_KEY = '@cestmavoiture_user_v2';
-const PENDING_SCAN_KEY = '@pending_scan_capture_v1';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { tempImage, isSelecting, saveImageToFolder, clearSelection } = useScan();
  
   // CORRECTION DU CRASH : Sécurité si le contexte est vide au démarrage
   const kilometrageContext = useKilometrage();
   const kmValue = kilometrageContext ? kilometrageContext.km : "190 000";
 
-  const [pendingScan, setPendingScan] = useState<{ uri: string; base64: string } | null>(null);
   const wiggle = useRef(new Animated.Value(0)).current;
 
   const [userData, setUserData] = useState({
@@ -30,17 +30,6 @@ export default function HomeScreen() {
         try {
           const storedData = await AsyncStorage.getItem(USER_DATA_KEY);
           if (storedData) setUserData(JSON.parse(storedData));
-          const pendingRaw = await AsyncStorage.getItem(PENDING_SCAN_KEY);
-          if (pendingRaw) {
-            const pending = JSON.parse(pendingRaw) as { uri?: string; base64?: string };
-            if (pending.uri && pending.base64) {
-              setPendingScan({ uri: pending.uri, base64: pending.base64 });
-            } else {
-              setPendingScan(null);
-            }
-          } else {
-            setPendingScan(null);
-          }
         } catch (e) {
           console.log('Erreur', e);
         }
@@ -50,7 +39,7 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    if (!pendingScan) {
+    if (!isSelecting) {
       wiggle.stopAnimation();
       wiggle.setValue(0);
       return;
@@ -63,20 +52,26 @@ export default function HomeScreen() {
     );
     loop.start();
     return () => loop.stop();
-  }, [pendingScan, wiggle]);
+  }, [isSelecting, wiggle]);
 
   const handleGridPress = async (route: string) => {
-    if (!pendingScan) {
+    if (!isSelecting || !tempImage) {
+      console.log('[Home] normal click, no scan selecting', { route, isSelecting, hasTempImage: !!tempImage });
       router.push(route as any);
       return;
     }
-    await AsyncStorage.removeItem(PENDING_SCAN_KEY);
-    setPendingScan(null);
+
+    const folderName = route.replace('/', '');
+    console.log('[Home] selecting destination', { folderName, route, uri: tempImage.uri });
+    const saved = await saveImageToFolder(folderName);
+    console.log('[Home] saveImageToFolder result', saved);
+    clearSelection();
+
     router.push({
       pathname: route as any,
       params: {
-        imageCaptured: pendingScan.uri,
-        imageCapturedBase64: pendingScan.base64,
+        imageCaptured: tempImage.uri,
+        imageCapturedBase64: tempImage.base64,
         fromGlobalScan: '1',
       },
     });
@@ -112,7 +107,7 @@ export default function HomeScreen() {
 
       <View style={styles.contentBody}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-          {pendingScan ? (
+          {isSelecting ? (
             <Text style={styles.pendingHint}>Photo prête: touche une case pour enregistrer dans ce dossier</Text>
           ) : null}
           <View style={styles.userInfoSimple}>

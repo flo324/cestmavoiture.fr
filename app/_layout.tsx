@@ -1,15 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Slot, useRouter } from 'expo-router';
 import React from 'react';
 import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScanProvider, useScan } from '../context/ScanContext';
 
 export default function RootLayout() {
+  return (
+    <ScanProvider>
+      <RootLayoutContent />
+    </ScanProvider>
+  );
+}
+
+function RootLayoutContent() {
   const router = useRouter();
-  const PENDING_SCAN_KEY = '@pending_scan_capture_v1';
+  const { setCapturedImageForSelection } = useScan();
 
   const handleGlobalScan = async () => {
+    console.log('[RootLayout] SCAN pressed');
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
     if (!granted) {
       Alert.alert('Erreur', 'Accès caméra requis');
@@ -32,16 +41,14 @@ export default function RootLayout() {
     }
 
     try {
-      await AsyncStorage.setItem(
-        PENDING_SCAN_KEY,
-        JSON.stringify({
-          uri: imageUri,
-          base64,
-          createdAt: Date.now(),
-        })
-      );
+      console.log('[RootLayout] scan captured', { uri: imageUri, base64Length: base64.length });
+      setCapturedImageForSelection({
+        uri: imageUri,
+        base64,
+        createdAt: Date.now(),
+      });
       router.replace('/(tabs)');
-      Alert.alert('Scan prêt', 'Photo capturée. Choisissez maintenant une case sur l’accueil.');
+      Alert.alert('Scan prêt', "Photo capturée. Choisissez une case sur l'accueil.");
     } catch {
       Alert.alert('Erreur', 'Impossible de préparer le scan.');
     }
