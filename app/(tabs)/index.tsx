@@ -34,7 +34,7 @@ export default function HomeScreen() {
     { label: "FACTURES", icon: "file-document-outline", route: "/docs", color: "#3498db" },
     { label: "PHARE", icon: "lightbulb-outline", route: "/phares", color: "#3498db" },
     { label: "PNEUS", icon: "tire", route: "/pneus", color: "#e67e22" },
-    { label: "PERMIS", icon: "card-account-details-outline", route: "/permis", color: "#f39c12" },
+    { label: "DOCS", icon: "folder-open", route: "/docs", color: "#f39c12" },
     { label: "LOCATION", icon: "camera-account", route: "/location", color: "#3498db" },
     { label: "CARROSSERIE", icon: "car-side", route: "/carrosserie", color: "#e67e22" },
     { label: "PANNE", icon: "bell-ring", route: "/panne", color: "#e74c3c" },
@@ -160,8 +160,8 @@ export default function HomeScreen() {
             <GridButton title="PAN" sub="PANNE" icon="bell-ring" color="#e74c3c" route="/panne" />
             <GridButton title="PNE" sub="PNEUS" icon="tire" color="#e67e22" route="/pneus" />
             <GridButton title="FT" sub="FACTURES" icon="file-document-outline" color="#3498db" route="/docs" />
-            <GridButton title="CG" sub="CARTE GRISE" icon="card-account-details-outline" color="#f39c12" route="/cg" />
-            <GridButton title="PC" sub="PERMIS" icon="card-account-details-outline" color="#f39c12" route="/permis" />
+            <GridButton title="EN" sub="ENTRETIEN" icon="wrench" color="#f39c12" route="/entretien" />
+            <GridButton title="DOC" sub="DOCUMENTS" icon="folder-open" color="#f39c12" route="/docs" />
             <GridButton title="CF" sub="PHARE" icon="lightbulb-outline" color="#3498db" route="/phares" />
             <GridButton title="PH" sub="CARROSSERIE" icon="car-side" color="#e67e22" route="/carrosserie" />
             <GridButton title="LOC" sub="LOCATION" icon="camera-account" color="#3498db" route="/location" />

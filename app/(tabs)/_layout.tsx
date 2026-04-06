@@ -96,15 +96,17 @@ export default function TabLayout() {
       <Tabs.Screen name="st" options={{ href: null }} />
       <Tabs.Screen name="en" options={{ href: null }} />
       <Tabs.Screen name="km" options={{ href: null }} />
+      <Tabs.Screen name="factures" options={{ href: null }} />
+      <Tabs.Screen name="entretien" options={{ href: null }} />
       <Tabs.Screen name="ct" options={{ href: null }} />
-      <Tabs.Screen name="cg" options={{ href: null }} />
       <Tabs.Screen name="location" options={{ href: null }} />
       <Tabs.Screen name="pneus" options={{ href: null }} />
-      <Tabs.Screen name="permis" options={{ href: null }} />
       <Tabs.Screen name="batterie" options={{ href: null }} />
       <Tabs.Screen name="carrosserie" options={{ href: null }} />
       <Tabs.Screen name="docs" options={{ href: null }} />
       <Tabs.Screen name="explore" options={{ href: null }} />
+      <Tabs.Screen name="scan_permis" options={{ href: null }} />
+      <Tabs.Screen name="scan_cg" options={{ href: null }} />
     </Tabs>
     </View>
   </View>

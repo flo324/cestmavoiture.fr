@@ -1,16 +1,16 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useMemo } from 'react';
 import {
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
-import { useEntretien } from '../../context/EntretienContext';
 import type { MaintenanceTask } from '../../context/EntretienContext';
+import { useEntretien } from '../../context/EntretienContext';
 
 export default function EntretienScreen() {
   const ctx = useEntretien();
