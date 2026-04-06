@@ -6,12 +6,9 @@ import { Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity
 
 export default function ScanCG() {
   const STORAGE_KEY_CG = '@ma_voiture_cg_data_complete';
-  const GEMINI_KEY = 'AIzaSyCMZLsiladtEj3-OxhuujHMN-OnEtSY2kQ';
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
   const params = useLocalSearchParams<{
     imageUri?: string;
     imageCaptured?: string;
-    imageCapturedBase64?: string;
     fromGlobalScan?: string;
     nom?: string;
     adresse?: string;
@@ -47,70 +44,35 @@ export default function ScanCG() {
   }, []);
 
   useEffect(() => {
-    const analyzeIncomingScan = async () => {
+    const saveIncomingScan = async () => {
       const incomingUri = typeof params.imageCaptured === 'string' ? params.imageCaptured : '';
-      const incomingBase64 =
-        typeof params.imageCapturedBase64 === 'string' ? params.imageCapturedBase64 : '';
       const fromGlobal = typeof params.fromGlobalScan === 'string' ? params.fromGlobalScan : '';
       console.log('[scan_cg] incoming params', {
         hasUri: !!incomingUri,
-        base64Length: incomingBase64.length,
         fromGlobal,
       });
-      if (!incomingUri || !incomingBase64 || fromGlobal !== '1') return;
+      if (!incomingUri || fromGlobal !== '1') return;
 
-      const prompt =
-        'Analyse cette carte grise française et réponds uniquement en JSON: {"nom":"","adresse":"","immatriculation":"","vin":"","puissanceFiscale":"","modeleVehicule":""}';
-      const response = await fetch(GEMINI_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: incomingBase64 } }],
-            },
-          ],
-        }),
-      });
-      const data = await response.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      const parsed = JSON.parse(String(text).replace(/```json|```/g, '').trim());
-
-      const next = {
-        nom: String(parsed.nom || '0'),
-        adresse: String(parsed.adresse || '0'),
-        immat: String(parsed.immatriculation || parsed.immat || '0'),
-        vin: String(parsed.vin || '0'),
-        puissance: String(parsed.puissanceFiscale || parsed.puissance || '0'),
-        modeleVehicule: String(parsed.modeleVehicule || parsed.modele || '0'),
-      };
-
+      // Affiche et sauvegarde la photo immédiatement, sans IA.
       setImageUri(incomingUri);
-      setNom(next.nom);
-      setAdresse(next.adresse);
-      setImmatriculation(next.immat);
-      setVin(next.vin);
-      setPuissanceFiscale(next.puissance);
-      setModeleVehicule(next.modeleVehicule);
-
       await AsyncStorage.setItem(
         STORAGE_KEY_CG,
         JSON.stringify({
           image: incomingUri,
           info: {
-            nom: next.nom,
-            adresse: next.adresse,
-            immat: next.immat,
-            vin: next.vin,
-            puissance: next.puissance,
-            modeleVehicule: next.modeleVehicule,
+            nom: nom || '0',
+            adresse: adresse || '0',
+            immat: immatriculation || '0',
+            vin: vin || '0',
+            puissance: puissanceFiscale || '0',
+            modeleVehicule: modeleVehicule || '0',
           },
         })
       );
       console.log('[scan_cg] saved to storage', { key: STORAGE_KEY_CG, uri: incomingUri });
     };
-    analyzeIncomingScan().catch(() => {});
-  }, [params, GEMINI_URL]);
+    saveIncomingScan().catch(() => {});
+  }, [params.imageCaptured, params.fromGlobalScan]);
 
   useEffect(() => {
     if (typeof params.imageUri === 'string') setImageUri(params.imageUri);

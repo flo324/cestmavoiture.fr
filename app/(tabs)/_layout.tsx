@@ -1,6 +1,6 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { EntretienProvider } from '../../context/EntretienContext';
 import { KilometrageProvider } from '../../context/KilometrageContext';
@@ -13,11 +13,12 @@ export default function TabLayout() {
     <View style={styles.appContainer}>
     <Tabs screenOptions={{
     headerShown: false,
-    tabBarActiveTintColor: '#3498db',
+    tabBarActiveTintColor: '#1aa6a6',
+    tabBarInactiveTintColor: '#7f8c8d',
     tabBarStyle: (({
-      height: 60,
-      paddingBottom: 5,
-      paddingTop: 5,
+      height: 72,
+      paddingBottom: 8,
+      paddingTop: 6,
       backgroundColor: '#fff',
       borderTopWidth: 0,
       elevation: 5,
@@ -29,8 +30,26 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tableau de bord',
+          title: 'TdB',
           tabBarIcon: ({ color }) => <MaterialCommunityIcons name="view-dashboard" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: 'SCAN',
+          tabBarButton: (props: any) => (
+            <TouchableOpacity
+              {...props}
+              activeOpacity={0.85}
+              style={styles.scanBtnWrap}
+            >
+              <View style={styles.scanBtnInner}>
+                <Ionicons name="scan" size={30} color="#fff" />
+              </View>
+              <Text style={styles.scanBtnTxt}>SCAN</Text>
+            </TouchableOpacity>
+          ),
         }}
       />
       <Tabs.Screen
@@ -54,7 +73,6 @@ export default function TabLayout() {
       <Tabs.Screen name="carrosserie" options={{ href: null }} />
       <Tabs.Screen name="docs" options={{ href: null }} />
       <Tabs.Screen name="explore" options={{ href: null }} />
-      <Tabs.Screen name="scan" options={{ href: null }} />
       <Tabs.Screen name="scan_permis" options={{ href: null }} />
       <Tabs.Screen name="scan_cg" options={{ href: null }} />
     </Tabs>
@@ -80,5 +98,33 @@ const styles = StyleSheet.create({
     maxWidth: Platform.OS === 'web' ? 380 : '100%',
     alignSelf: 'center', // Centre l'appli horizontalement sur web
     backgroundColor: '#fff',
+  },
+  scanBtnWrap: {
+    top: -24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 96,
+  },
+  scanBtnInner: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#18b7b7',
+    borderWidth: 4,
+    borderColor: '#d8f8f8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#0f8e8e',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.38,
+    shadowRadius: 9,
+  },
+  scanBtnTxt: {
+    marginTop: 4,
+    color: '#18b7b7',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
 });

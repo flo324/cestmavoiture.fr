@@ -20,9 +20,6 @@ import {
 const { width, height } = Dimensions.get('window');
 const STORAGE_KEY = '@mes_factures_v5';
 
-const MY_API_KEY = 'AIzaSyCMZLsiIadtEj3-OxhuujHMN-OnEtSY2kQ';
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${MY_API_KEY}`;
-
 interface ReparationFolder {
   id: string;
   titre: string;
@@ -78,42 +75,27 @@ export default function FacturesScreen() {
   const analyserFactureAvecIA = async () => {
     if (!capturedImage) return;
     setStep('analyzing');
-    const prompt = `Analyse cette facture. Réponds uniquement en JSON pur : {
-      "titre": "nom réparation",
-      "garage": "nom du garage (haut gauche)",
-      "adresse": "adresse garage",
-      "date": "JJ/MM/AAAA (sous case date)",
-      "km": "kilométrage (sous date)",
-      "prixTTC": "Total TTC (BAS À DROITE)",
-      "details": "travaux (sous désignation)"
-    }`;
-
     try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: 'image/jpeg', data: capturedImage.base64 } },
-              ],
-            },
-          ],
-        }),
-      });
-      const data = await response.json();
-      const textResponse = data.candidates[0].content.parts[0].text;
-      const cleanJson = JSON.parse(textResponse.replace(/```json|```/g, '').trim());
-      const nouvelle = { id: Date.now().toString(), ...cleanJson, imageUri: capturedImage.uri };
+      const now = new Date();
+      const date = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+      const nouvelle = {
+        id: Date.now().toString(),
+        titre: 'Document scanné',
+        garage: 'À compléter',
+        adresse: 'À compléter',
+        date,
+        km: '0',
+        prixTTC: '0',
+        details: 'Analyse IA désactivée temporairement.',
+        imageUri: capturedImage.uri,
+      };
       const updated = [nouvelle, ...reparations];
       setReparations(updated);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       setStep('idle');
       setCapturedImage(null);
     } catch (e) {
-      Alert.alert('Erreur', "Active l'API Gemini sur Google Cloud Console.");
+      Alert.alert('Erreur', 'Impossible de sauvegarder le document.');
       setStep('idle');
     }
   };

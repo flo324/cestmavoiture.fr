@@ -6,12 +6,9 @@ import { Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity
 
 export default function ScanPermis() {
   const STORAGE_KEY_PERMIS = '@ma_voiture_permis_data';
-  const GEMINI_KEY = 'AIzaSyCMZLsiladtEj3-OxhuujHMN-OnEtSY2kQ';
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
   const params = useLocalSearchParams<{
     imageUri?: string;
     imageCaptured?: string;
-    imageCapturedBase64?: string;
     fromGlobalScan?: string;
     nom?: string;
     prenom?: string;
@@ -44,67 +41,34 @@ export default function ScanPermis() {
   }, []);
 
   useEffect(() => {
-    const analyzeIncomingScan = async () => {
+    const saveIncomingScan = async () => {
       const incomingUri = typeof params.imageCaptured === 'string' ? params.imageCaptured : '';
-      const incomingBase64 =
-        typeof params.imageCapturedBase64 === 'string' ? params.imageCapturedBase64 : '';
       const fromGlobal = typeof params.fromGlobalScan === 'string' ? params.fromGlobalScan : '';
       console.log('[scan_permis] incoming params', {
         hasUri: !!incomingUri,
-        base64Length: incomingBase64.length,
         fromGlobal,
       });
-      if (!incomingUri || !incomingBase64 || fromGlobal !== '1') return;
+      if (!incomingUri || fromGlobal !== '1') return;
 
-      const prompt =
-        'Analyse ce permis de conduire français et réponds uniquement en JSON: {"nom":"","prenom":"","adresse":"","dateObtention":"","numeroPermis":""}';
-      const response = await fetch(GEMINI_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: incomingBase64 } }],
-            },
-          ],
-        }),
-      });
-      const data = await response.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      const parsed = JSON.parse(String(text).replace(/```json|```/g, '').trim());
-
-      const next = {
-        nom: String(parsed.nom || '0'),
-        prenom: String(parsed.prenom || '0'),
-        adresse: String(parsed.adresse || '0'),
-        dateObtention: String(parsed.dateObtention || '0'),
-        numero: String(parsed.numeroPermis || parsed.numero || '0'),
-      };
-
+      // Affiche et sauvegarde la photo immédiatement, sans IA.
       setImageUri(incomingUri);
-      setNom(next.nom);
-      setPrenom(next.prenom);
-      setAdresse(next.adresse);
-      setDateObtention(next.dateObtention);
-      setNumeroPermis(next.numero);
-
       await AsyncStorage.setItem(
         STORAGE_KEY_PERMIS,
         JSON.stringify({
           image: incomingUri,
           info: {
-            nom: next.nom,
-            prenom: next.prenom,
-            adresse: next.adresse,
-            dateObtention: next.dateObtention,
-            numero: next.numero,
+            nom: nom || '0',
+            prenom: prenom || '0',
+            adresse: adresse || '0',
+            dateObtention: dateObtention || '0',
+            numero: numeroPermis || '0',
           },
         })
       );
       console.log('[scan_permis] saved to storage', { key: STORAGE_KEY_PERMIS, uri: incomingUri });
     };
-    analyzeIncomingScan().catch(() => {});
-  }, [params, GEMINI_URL]);
+    saveIncomingScan().catch(() => {});
+  }, [params.imageCaptured, params.fromGlobalScan]);
 
   useEffect(() => {
     if (typeof params.imageUri === 'string') setImageUri(params.imageUri);

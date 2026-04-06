@@ -9,12 +9,6 @@ import { ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Text, T
 import { useEntretien } from '../../context/EntretienContext';
 const STORAGE_KEY_CT = '@ma_voiture_ct_data';
 
-const GEMINI_API_KEY = 'AIzaSyCMZLsiladtEj3-OxhuujHMN-OnEtSY2kQ';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-
-const CT_PROMPT =
-  "Analyse ce CT. Extrais la date de visite, le kilométrage et liste les défaillances. Réponds uniquement en JSON structuré";
-
 type CtInfoState = {
   dateCt: string;
   kmScanne: string;
@@ -181,66 +175,17 @@ export default function CtScreen() {
         return;
       }
 
-      const response = await fetch(GEMINI_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: CT_PROMPT },
-                { inline_data: { mime_type: 'image/jpeg', data: base64 } },
-              ],
-            },
-          ],
-        }),
-      });
-
-      const data = await response.json();
-      if (data.error || !response.ok) {
-        Alert.alert('Document illisible, réessayez');
-        return;
-      }
-      const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!textResponse || typeof textResponse !== 'string') {
-        Alert.alert('Document illisible, réessayez');
-        return;
-      }
-
-      let parsed: unknown;
-      try {
-        parsed = parseJsonFromGeminiText(textResponse);
-      } catch {
-        Alert.alert('Document illisible, réessayez');
-        return;
-      }
-
-      if (!parsed || typeof parsed !== 'object') {
-        Alert.alert('Document illisible, réessayez');
-        return;
-      }
-
-      const { dateVisite, kmRaw, defaillances } = normalizeGeminiCt(parsed as Record<string, unknown>);
-      const visitDate = parseFrDate(dateVisite);
-
-      if (!visitDate) {
-        Alert.alert('Document illisible, réessayez');
-        return;
-      }
-
-      const echDate = addYears(visitDate, 2);
+      const today = new Date();
+      const echDate = addYears(today, 2);
       const prochainCtFormatted = formatFr(echDate);
-      const kmScanne = formatKmDisplay(kmRaw);
-
-      const defautsText =
-        defaillances.length > 0
-          ? defaillances.map((d, i) => `${i + 1}. ${d}`).join('\n')
-          : 'Aucune défaillance listée par l\'IA.';
+      const kmScanne = '0';
+      const defaillances: string[] = [];
+      const defautsText = 'Photo enregistrée. Analyse IA temporairement désactivée.';
 
       const extracted: CtInfoState = {
-        dateCt: String(dateVisite),
+        dateCt: formatFr(today),
         kmScanne,
-        resultat: defaillances.length > 0 ? 'DÉFAILLANCES DÉTECTÉES' : 'FAVORABLE (résumé IA)',
+        resultat: 'À VÉRIFIER',
         defauts: defautsText,
         prochainCt: prochainCtFormatted,
       };
@@ -307,7 +252,7 @@ export default function CtScreen() {
         </View>
 
         <View style={styles.infoCard}>
-          <Text style={styles.sectionTitle}>RÉSUMÉ DE L&apos;IA (GEMINI)</Text>
+          <Text style={styles.sectionTitle}>RÉSUMÉ DU SCAN</Text>
           <View style={styles.row}>
             <Text style={styles.label}>DATE DU VISITE :</Text>
             <Text style={styles.val}>{ctInfo.dateCt}</Text>
@@ -356,7 +301,7 @@ export default function CtScreen() {
       {isAnalyzing && (
         <View style={styles.loader}>
           <ActivityIndicator size="large" color="#fff" />
-          <Text style={{ color: '#fff', fontWeight: 'bold', marginTop: 10 }}>ANALYSE GEMINI...</Text>
+          <Text style={{ color: '#fff', fontWeight: 'bold', marginTop: 10 }}>ENREGISTREMENT...</Text>
         </View>
       )}
     </View>

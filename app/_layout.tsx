@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Slot, useRouter } from 'expo-router';
 import React from 'react';
-import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ScanProvider, useScan } from '../context/ScanContext';
 
 export default function RootLayout() {
@@ -20,38 +20,25 @@ function RootLayoutContent() {
   const handleGlobalScan = async () => {
     console.log('[RootLayout] SCAN pressed');
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
-    if (!granted) {
-      Alert.alert('Erreur', 'Accès caméra requis');
-      return;
-    }
+    if (!granted) return;
 
     const photo = await ImagePicker.launchCameraAsync({
       quality: 0.7,
       allowsEditing: true,
-      base64: true,
     });
     if (photo.canceled || !photo.assets?.[0]) return;
 
     const asset = photo.assets[0];
     const imageUri = asset.uri ?? '';
-    const base64 = asset.base64 ?? '';
-    if (!base64) {
-      Alert.alert('Erreur', 'Photo illisible, réessaie.');
-      return;
-    }
 
     try {
-      console.log('[RootLayout] scan captured', { uri: imageUri, base64Length: base64.length });
+      console.log('[RootLayout] scan captured', { uri: imageUri });
       setCapturedImageForSelection({
         uri: imageUri,
-        base64,
         createdAt: Date.now(),
       });
       router.replace('/(tabs)');
-      Alert.alert('Scan prêt', "Photo capturée. Choisissez une case sur l'accueil.");
-    } catch {
-      Alert.alert('Erreur', 'Impossible de préparer le scan.');
-    }
+    } catch {}
   };
 
   return (
