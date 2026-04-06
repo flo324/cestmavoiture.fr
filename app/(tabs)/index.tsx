@@ -31,7 +31,7 @@ export default function HomeScreen() {
   const dossiersSelection = [
     { label: "CONTRÔLE TECHNIQUE", icon: "clipboard-list-outline", route: "/ct", color: "#3498db" },
     { label: "BATTERIE", icon: "battery-charging", route: "/batterie", color: "#f1c40f" },
-    { label: "FACTURES", icon: "file-document-outline", route: "/docs", color: "#3498db" },
+    { label: "FACTURES", icon: "file-document-outline", route: "/factures", color: "#3498db" },
     { label: "PHARE", icon: "lightbulb-outline", route: "/phares", color: "#3498db" },
     { label: "PNEUS", icon: "tire", route: "/pneus", color: "#e67e22" },
     { label: "DOCS", icon: "folder-open", route: "/docs", color: "#f39c12" },
@@ -159,7 +159,7 @@ export default function HomeScreen() {
             <GridButton title="BAT" sub="BATTERIE" icon="battery-charging" color="#f1c40f" route="/batterie" />
             <GridButton title="PAN" sub="PANNE" icon="bell-ring" color="#e74c3c" route="/panne" />
             <GridButton title="PNE" sub="PNEUS" icon="tire" color="#e67e22" route="/pneus" />
-            <GridButton title="FT" sub="FACTURES" icon="file-document-outline" color="#3498db" route="/docs" />
+            <GridButton title="FT" sub="FACTURES" icon="file-document-outline" color="#3498db" route="/factures" />
             <GridButton title="EN" sub="ENTRETIEN" icon="wrench" color="#f39c12" route="/entretien" />
             <GridButton title="DOC" sub="DOCUMENTS" icon="folder-open" color="#f39c12" route="/docs" />
             <GridButton title="CF" sub="PHARE" icon="lightbulb-outline" color="#3498db" route="/phares" />
