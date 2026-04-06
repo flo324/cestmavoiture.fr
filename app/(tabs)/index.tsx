@@ -1,14 +1,14 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
-import { Alert, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
 
 // Importation de la synchro
 import { useKilometrage } from '../../context/KilometrageContext';
 
 const USER_DATA_KEY = '@cestmavoiture_user_v2';
+const PENDING_SCAN_KEY = '@pending_scan_capture_v1';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -17,115 +17,91 @@ export default function HomeScreen() {
   const kilometrageContext = useKilometrage();
   const kmValue = kilometrageContext ? kilometrageContext.km : "190 000";
 
-  const [permission, requestPermission] = useCameraPermissions();
-  const [cameraVisible, setCameraVisible] = useState(false);
-  const [selectionVisible, setSelectionVisible] = useState(false);
-  const [capturedUri, setCapturedUri] = useState<string | null>(null);
-  const cameraRef = useRef<any>(null);
+  const [pendingScan, setPendingScan] = useState<{ uri: string; base64: string } | null>(null);
+  const wiggle = useRef(new Animated.Value(0)).current;
 
   const [userData, setUserData] = useState({
     prenom: 'Florent', nom: 'DAMIANO', modele: '307 PEUGEOT', immat: '56 Ayw 13',
   });
 
-  // Liste des 11 dossiers (on exclut KM et ST pour le rangement manuel)
-  const dossiersSelection = [
-    { label: "CONTRÔLE TECHNIQUE", icon: "clipboard-list-outline", route: "/ct", color: "#3498db" },
-    { label: "BATTERIE", icon: "battery-charging", route: "/batterie", color: "#f1c40f" },
-    { label: "FACTURES", icon: "file-document-outline", route: "/factures", color: "#3498db" },
-    { label: "PHARE", icon: "lightbulb-outline", route: "/phares", color: "#3498db" },
-    { label: "PNEUS", icon: "tire", route: "/pneus", color: "#e67e22" },
-    { label: "DOCS", icon: "folder-open", route: "/docs", color: "#f39c12" },
-    { label: "LOCATION", icon: "camera-account", route: "/location", color: "#3498db" },
-    { label: "CARROSSERIE", icon: "car-side", route: "/carrosserie", color: "#e67e22" },
-    { label: "PANNE", icon: "bell-ring", route: "/panne", color: "#e74c3c" },
-    { label: "PROFIL", icon: "account-outline", route: "/profil", color: "#9b59b6" },
-    { label: "RÉGLAGES", icon: "cog-outline", route: "/modal", color: "#7f8c8d" },
-  ];
-
   useFocusEffect(
     useCallback(() => {
-      const fetchUserData = async () => {
+      const fetchData = async () => {
         try {
           const storedData = await AsyncStorage.getItem(USER_DATA_KEY);
           if (storedData) setUserData(JSON.parse(storedData));
-        } catch (e) { console.log("Erreur", e); }
+          const pendingRaw = await AsyncStorage.getItem(PENDING_SCAN_KEY);
+          if (pendingRaw) {
+            const pending = JSON.parse(pendingRaw) as { uri?: string; base64?: string };
+            if (pending.uri && pending.base64) {
+              setPendingScan({ uri: pending.uri, base64: pending.base64 });
+            } else {
+              setPendingScan(null);
+            }
+          } else {
+            setPendingScan(null);
+          }
+        } catch (e) {
+          console.log('Erreur', e);
+        }
       };
-      fetchUserData();
+      fetchData();
     }, [])
   );
 
-  const handleScanPress = async () => {
-    if (!permission?.granted) {
-      const res = await requestPermission();
-      if (!res.granted) return Alert.alert("Erreur", "Permission caméra requise");
+  useEffect(() => {
+    if (!pendingScan) {
+      wiggle.stopAnimation();
+      wiggle.setValue(0);
+      return;
     }
-    setCameraVisible(true);
-  };
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(wiggle, { toValue: 1, duration: 90, useNativeDriver: true }),
+        Animated.timing(wiggle, { toValue: -1, duration: 90, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pendingScan, wiggle]);
 
-  const takePicture = async () => {
-    if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync();
-      setCapturedUri(photo.uri);
-      setCameraVisible(false);
-      setSelectionVisible(true);
+  const handleGridPress = async (route: string) => {
+    if (!pendingScan) {
+      router.push(route as any);
+      return;
     }
-  };
-
-  const saveAndGo = (route: any) => {
-    setSelectionVisible(false);
+    await AsyncStorage.removeItem(PENDING_SCAN_KEY);
+    setPendingScan(null);
     router.push({
-      pathname: route,
-      params: { imageCaptured: capturedUri }
+      pathname: route as any,
+      params: {
+        imageCaptured: pendingScan.uri,
+        imageCapturedBase64: pendingScan.base64,
+        fromGlobalScan: '1',
+      },
     });
   };
 
   const GridButton = ({ title, sub, icon, color, route }: any) => (
     <View style={styles.gridWrapper}>
-      <TouchableOpacity style={[styles.gridItem, { borderColor: color }]} onPress={() => router.push(route)}>
+      <Animated.View
+        style={{
+          transform: [
+            { rotate: wiggle.interpolate({ inputRange: [-1, 1], outputRange: ['-1.8deg', '1.8deg'] }) },
+          ],
+        }}
+      >
+      <TouchableOpacity style={[styles.gridItem, { borderColor: color }]} onPress={() => handleGridPress(route)}>
         <MaterialCommunityIcons name={icon} size={35} color={color} />
         <Text style={styles.gridTitle}>{title}</Text>
       </TouchableOpacity>
+      </Animated.View>
       <Text style={styles.gridSubText}>{sub}</Text>
     </View>
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* MODAL CAMÉRA */}
-      <Modal visible={cameraVisible} animationType="slide">
-        <CameraView style={{ flex: 1 }} ref={cameraRef}>
-          <View style={styles.cameraOverlay}>
-            <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
-              <View style={styles.captureBtnInternal} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.closeCamera} onPress={() => setCameraVisible(false)}>
-              <Ionicons name="close" size={40} color="white" />
-            </TouchableOpacity>
-          </View>
-        </CameraView>
-      </Modal>
-
-      {/* MODAL DE SÉLECTION (11 dossiers) */}
-      <Modal visible={selectionVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.selectionCard}>
-            <Text style={styles.modalTitle}>Enregistrer dans quel dossier ?</Text>
-            <ScrollView style={{ maxHeight: 450 }}>
-              {dossiersSelection.map((item, index) => (
-                <TouchableOpacity key={index} style={styles.selectionItem} onPress={() => saveAndGo(item.route)}>
-                  <MaterialCommunityIcons name={item.icon as any} size={24} color={item.color} />
-                  <Text style={styles.selectionLabel}>{item.label}</Text>
-                  <Ionicons name="chevron-forward" size={18} color="#bdc3c7" />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setSelectionVisible(false)}>
-              <Text style={styles.cancelBtnText}>ANNULER</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       <View style={styles.logoWhiteArea}>
         <View style={styles.topLogo}>
           <Text style={styles.logoPart1}>cestma</Text>
@@ -136,6 +112,9 @@ export default function HomeScreen() {
 
       <View style={styles.contentBody}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+          {pendingScan ? (
+            <Text style={styles.pendingHint}>Photo prête: touche une case pour enregistrer dans ce dossier</Text>
+          ) : null}
           <View style={styles.userInfoSimple}>
              <View style={styles.avatarSimple}><Text style={styles.avatarTxtSimple}>FD</Text></View>
              <View style={{marginLeft: 15}}>
@@ -191,6 +170,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f2f5f8',
     marginTop: Platform.OS === 'web' ? 0 : -20
+  },
+  pendingHint: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 6,
+    backgroundColor: '#fff3cd',
+    color: '#8a6d3b',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 
   // --- STYLES UTILISATEUR ---

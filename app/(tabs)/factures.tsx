@@ -1,6 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -35,6 +36,11 @@ interface ReparationFolder {
 }
 
 export default function FacturesScreen() {
+  const params = useLocalSearchParams<{
+    imageCaptured?: string;
+    imageCapturedBase64?: string;
+    fromGlobalScan?: string;
+  }>();
   const [reparations, setReparations] = useState<ReparationFolder[]>([]);
   const [step, setStep] = useState<'idle' | 'hasPhoto' | 'analyzing'>('idle');
   const [capturedImage, setCapturedImage] = useState<{ uri: string; base64: string } | null>(null);
@@ -47,6 +53,17 @@ export default function FacturesScreen() {
     };
     loadData();
   }, []);
+
+  useEffect(() => {
+    const incomingUri = typeof params.imageCaptured === 'string' ? params.imageCaptured : '';
+    const incomingBase64 =
+      typeof params.imageCapturedBase64 === 'string' ? params.imageCapturedBase64 : '';
+    const fromGlobal = typeof params.fromGlobalScan === 'string' ? params.fromGlobalScan : '';
+    if (incomingUri && incomingBase64 && fromGlobal === '1') {
+      setCapturedImage({ uri: incomingUri, base64: incomingBase64 });
+      setStep('analyzing');
+    }
+  }, [params]);
 
   const handleStartScan = async () => {
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
@@ -100,6 +117,12 @@ export default function FacturesScreen() {
       setStep('idle');
     }
   };
+
+  useEffect(() => {
+    if (step === 'analyzing' && capturedImage) {
+      analyserFactureAvecIA();
+    }
+  }, [step, capturedImage]);
 
   return (
     <SafeAreaView style={styles.container}>

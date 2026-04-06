@@ -1,65 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { Slot, usePathname, useRouter } from 'expo-router';
+import { Slot, useRouter } from 'expo-router';
 import React from 'react';
 import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function RootLayout() {
   const router = useRouter();
-  const pathname = usePathname();
-
-  const GEMINI_KEY = 'AIzaSyCMZLsiladtEj3-OxhuujHMN-OnEtSY2kQ';
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
-
-  const extractJson = (text: string): Record<string, unknown> | null => {
-    const cleaned = text.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-    try {
-      const parsed = JSON.parse(cleaned);
-      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-    } catch {
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (!match) return null;
-      try {
-        const parsed = JSON.parse(match[0]);
-        return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-      } catch {
-        return null;
-      }
-    }
-  };
-
-  const toStr = (v: unknown): string => {
-    if (v == null) return '';
-    return String(v).trim();
-  };
-
-  const analyzeWithGemini = async (base64: string, prompt: string) => {
-    const response = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: base64 } }],
-          },
-        ],
-      }),
-    });
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!response.ok || !text) return null;
-    return extractJson(text);
-  };
+  const PENDING_SCAN_KEY = '@pending_scan_capture_v1';
 
   const handleGlobalScan = async () => {
-    const isCg = pathname === '/scan_cg';
-    const isPermis = pathname === '/scan_permis';
-
-    if (!isCg && !isPermis) {
-      Alert.alert('Scan', 'Ouvre d’abord la page Carte Grise ou Permis.');
-      return;
-    }
-
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
     if (!granted) {
       Alert.alert('Erreur', 'Accès caméra requis');
@@ -82,43 +32,18 @@ export default function RootLayout() {
     }
 
     try {
-      if (isCg) {
-        const prompt =
-          'Analyse cette carte grise française et réponds uniquement en JSON: {"nom":"","adresse":"","immatriculation":"","vin":"","puissanceFiscale":"","modeleVehicule":""}';
-        const parsed = await analyzeWithGemini(base64, prompt);
-        if (!parsed) {
-          Alert.alert('Erreur', 'Analyse IA impossible.');
-          return;
-        }
-        router.setParams({
-          imageUri,
-          nom: toStr(parsed.nom),
-          adresse: toStr(parsed.adresse),
-          immatriculation: toStr(parsed.immatriculation ?? parsed.immat),
-          vin: toStr(parsed.vin),
-          puissanceFiscale: toStr(parsed.puissanceFiscale ?? parsed.puissance),
-          modeleVehicule: toStr(parsed.modeleVehicule ?? parsed.modele),
-        });
-        return;
-      }
-
-      const prompt =
-        'Analyse ce permis de conduire français et réponds uniquement en JSON: {"nom":"","prenom":"","adresse":"","dateObtention":"","numeroPermis":""}';
-      const parsed = await analyzeWithGemini(base64, prompt);
-      if (!parsed) {
-        Alert.alert('Erreur', 'Analyse IA impossible.');
-        return;
-      }
-      router.setParams({
-        imageUri,
-        nom: toStr(parsed.nom),
-        prenom: toStr(parsed.prenom),
-        adresse: toStr(parsed.adresse),
-        dateObtention: toStr(parsed.dateObtention ?? parsed.date_obtention),
-        numeroPermis: toStr(parsed.numeroPermis ?? parsed.numero),
-      });
+      await AsyncStorage.setItem(
+        PENDING_SCAN_KEY,
+        JSON.stringify({
+          uri: imageUri,
+          base64,
+          createdAt: Date.now(),
+        })
+      );
+      router.replace('/(tabs)');
+      Alert.alert('Scan prêt', 'Photo capturée. Choisissez maintenant une case sur l’accueil.');
     } catch {
-      Alert.alert('Erreur', 'Analyse IA impossible.');
+      Alert.alert('Erreur', 'Impossible de préparer le scan.');
     }
   };
 

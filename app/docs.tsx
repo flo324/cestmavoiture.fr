@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { FlatList, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -30,6 +30,11 @@ const folders: DocFolder[] = [
 
 export default function DocsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    imageCaptured?: string;
+    imageCapturedBase64?: string;
+    fromGlobalScan?: string;
+  }>();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -44,7 +49,16 @@ export default function DocsScreen() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.folderCard}
-            onPress={() => router.push(item.route)}
+            onPress={() =>
+              router.push({
+                pathname: item.route,
+                params: {
+                  imageCaptured: (params.imageCaptured as string) || '',
+                  imageCapturedBase64: (params.imageCapturedBase64 as string) || '',
+                  fromGlobalScan: (params.fromGlobalScan as string) || '',
+                },
+              })
+            }
             activeOpacity={0.85}
           >
             <MaterialCommunityIcons name={item.icon} size={40} color="#f1c40f" />

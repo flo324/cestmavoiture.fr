@@ -1,11 +1,18 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function ScanCG() {
+  const STORAGE_KEY_CG = '@ma_voiture_cg_data_complete';
+  const GEMINI_KEY = 'AIzaSyCMZLsiladtEj3-OxhuujHMN-OnEtSY2kQ';
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
   const params = useLocalSearchParams<{
     imageUri?: string;
+    imageCaptured?: string;
+    imageCapturedBase64?: string;
+    fromGlobalScan?: string;
     nom?: string;
     adresse?: string;
     immatriculation?: string;
@@ -22,6 +29,82 @@ export default function ScanCG() {
   const [vin, setVin] = useState('');
   const [puissanceFiscale, setPuissanceFiscale] = useState('');
   const [modeleVehicule, setModeleVehicule] = useState('');
+
+  useEffect(() => {
+    const loadStored = async () => {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY_CG);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { image?: string; info?: Record<string, string> };
+      setImageUri(parsed.image || '');
+      setNom(parsed.info?.nom || '0');
+      setAdresse(parsed.info?.adresse || '0');
+      setImmatriculation(parsed.info?.immat || '0');
+      setVin(parsed.info?.vin || '0');
+      setPuissanceFiscale(parsed.info?.puissance || '0');
+      setModeleVehicule(parsed.info?.modeleVehicule || '0');
+    };
+    loadStored();
+  }, []);
+
+  useEffect(() => {
+    const analyzeIncomingScan = async () => {
+      const incomingUri = typeof params.imageCaptured === 'string' ? params.imageCaptured : '';
+      const incomingBase64 =
+        typeof params.imageCapturedBase64 === 'string' ? params.imageCapturedBase64 : '';
+      const fromGlobal = typeof params.fromGlobalScan === 'string' ? params.fromGlobalScan : '';
+      if (!incomingUri || !incomingBase64 || fromGlobal !== '1') return;
+
+      const prompt =
+        'Analyse cette carte grise française et réponds uniquement en JSON: {"nom":"","adresse":"","immatriculation":"","vin":"","puissanceFiscale":"","modeleVehicule":""}';
+      const response = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: incomingBase64 } }],
+            },
+          ],
+        }),
+      });
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const parsed = JSON.parse(String(text).replace(/```json|```/g, '').trim());
+
+      const next = {
+        nom: String(parsed.nom || '0'),
+        adresse: String(parsed.adresse || '0'),
+        immat: String(parsed.immatriculation || parsed.immat || '0'),
+        vin: String(parsed.vin || '0'),
+        puissance: String(parsed.puissanceFiscale || parsed.puissance || '0'),
+        modeleVehicule: String(parsed.modeleVehicule || parsed.modele || '0'),
+      };
+
+      setImageUri(incomingUri);
+      setNom(next.nom);
+      setAdresse(next.adresse);
+      setImmatriculation(next.immat);
+      setVin(next.vin);
+      setPuissanceFiscale(next.puissance);
+      setModeleVehicule(next.modeleVehicule);
+
+      await AsyncStorage.setItem(
+        STORAGE_KEY_CG,
+        JSON.stringify({
+          image: incomingUri,
+          info: {
+            nom: next.nom,
+            adresse: next.adresse,
+            immat: next.immat,
+            vin: next.vin,
+            puissance: next.puissance,
+            modeleVehicule: next.modeleVehicule,
+          },
+        })
+      );
+    };
+    analyzeIncomingScan().catch(() => {});
+  }, [params, GEMINI_URL]);
 
   useEffect(() => {
     if (typeof params.imageUri === 'string') setImageUri(params.imageUri);

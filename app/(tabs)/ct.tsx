@@ -2,7 +2,7 @@ import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -90,6 +90,11 @@ function urgencyBackground(daysLeft: number): string {
 
 export default function CtScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    imageCaptured?: string;
+    imageCapturedBase64?: string;
+    fromGlobalScan?: string;
+  }>();
   const entretien = useEntretien();
   const addMaintenanceTask = entretien?.addMaintenanceTask;
 
@@ -109,6 +114,17 @@ export default function CtScreen() {
   useEffect(() => {
     loadSavedData();
   }, []);
+
+  useEffect(() => {
+    const incomingUri = typeof params.imageCaptured === 'string' ? params.imageCaptured : '';
+    const incomingBase64 =
+      typeof params.imageCapturedBase64 === 'string' ? params.imageCapturedBase64 : '';
+    const fromGlobal = typeof params.fromGlobalScan === 'string' ? params.fromGlobalScan : '';
+    if (incomingUri && incomingBase64 && fromGlobal === '1') {
+      setCtImage(incomingUri);
+      analyserCT(incomingUri, incomingBase64);
+    }
+  }, [params]);
 
   const calculateDaysUntil = (echDate: Date) => {
     const diff = echDate.getTime() - Date.now();
