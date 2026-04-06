@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Slot, useRouter } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ScanProvider, useScan } from '../context/ScanContext';
 
 export default function RootLayout() {
@@ -45,9 +45,9 @@ function RootLayoutContent() {
     <View style={styles.root}>
       <Slot />
       <TouchableOpacity style={styles.scanButton} onPress={handleGlobalScan} activeOpacity={0.85}>
+        <View style={styles.scanGlow} />
         <View style={styles.scanInner}>
-          <Ionicons name="camera" size={30} color="#fff" />
-          <Text style={styles.scanText}>SCAN</Text>
+          <Ionicons name="camera" size={30} color="#ffffff" />
         </View>
       </TouchableOpacity>
     </View>
@@ -59,28 +59,32 @@ const styles = StyleSheet.create({
   scanButton: {
     position: 'absolute',
     alignSelf: 'center',
-    bottom: Platform.OS === 'web' ? 20 : 24,
+    bottom: Platform.OS === 'web' ? 22 : 24,
     zIndex: 2000,
-  },
-  scanInner: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
-    backgroundColor: '#ef5350',
-    borderWidth: 4,
-    borderColor: '#f1f4f9',
+    width: 88,
+    height: 88,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
   },
-  scanText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginTop: 2,
+  scanGlow: {
+    position: 'absolute',
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#00F2FF',
+    opacity: 0.23,
+  },
+  scanInner: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#00F2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 20,
+    shadowColor: '#00F2FF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 20,
   },
 });
