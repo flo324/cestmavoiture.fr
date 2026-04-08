@@ -1,9 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 // On importe le contexte
 import { useKilometrage } from '../../context/KilometrageContext';
+import { normalizeDocumentCapture } from '../../services/documentScan';
 
 const GEMINI_KEY = "AIzaSyCMZLsiladtEj3-OxhuujHMN-OnEtSY2kQ";
 
@@ -21,8 +22,12 @@ export default function LocationScreen() {
   const [loading, setLoading] = useState(false);
 
   const scannerIA = async () => {
-    let res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 });
+    let res = await ImagePicker.launchCameraAsync({ allowsEditing: false, base64: true, quality: 1 });
     if (res.canceled || !res.assets[0].base64) return;
+    const normalized = await normalizeDocumentCapture(res.assets[0].uri, {
+      includeBase64: true,
+      quality: 0.94,
+    });
 
     setLoading(true);
     try {
@@ -32,7 +37,7 @@ export default function LocationScreen() {
         body: JSON.stringify({
           contents: [{ parts: [
             { text: "Repère les rayures/bosses. Donne les coordonnées X et Y en % dans ce format JSON : [{\"x\":50, \"y\":30}]" },
-            { inline_data: { mime_type: "image/jpeg", data: res.assets[0].base64 } }
+            { inline_data: { mime_type: "image/jpeg", data: normalized.base64 || res.assets[0].base64 } }
           ]}]
         })
       });
@@ -41,7 +46,7 @@ export default function LocationScreen() {
       const points = JSON.parse(json.candidates[0].content.parts[0].text.match(/\[.*\]/s)[0]);
    
       setCurrentPhotos([...currentPhotos, {
-        photoUri: res.assets[0].uri,
+        photoUri: normalized.uri || res.assets[0].uri,
         resultatIA: "Scan effectué",
         points
       }]);
@@ -52,12 +57,23 @@ export default function LocationScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={{paddingBottom: 100}}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={{paddingBottom: 100}} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={styles.card}>
           <Text style={styles.title}>NOUVEAU DOSSIER</Text>
-          <TextInput placeholder="Modèle de la voiture" style={styles.input} onChangeText={t => setInfo({...info, voiture: t})} />
-          <TextInput placeholder="Agence de location" style={styles.input} onChangeText={t => setInfo({...info, agence: t})} />
+          <TextInput
+            placeholder="Modèle de la voiture"
+            placeholderTextColor="#64748b"
+            style={styles.input}
+            onChangeText={(t) => setInfo({ ...info, voiture: t })}
+          />
+          <TextInput
+            placeholder="Agence de location"
+            placeholderTextColor="#64748b"
+            style={styles.input}
+            onChangeText={(t) => setInfo({ ...info, agence: t })}
+          />
       
           <TouchableOpacity style={styles.btnScan} onPress={scannerIA}>
             <MaterialCommunityIcons name="camera-plus" size={24} color="#fff" />
@@ -106,23 +122,47 @@ export default function LocationScreen() {
           </View>
         </Modal>
       )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f2f5f8' },
-  card: { backgroundColor: '#fff', padding: 20, borderRadius: 15, elevation: 3, margin: 20, marginTop: 40 },
-  title: { fontSize: 18, fontWeight: '900', marginBottom: 15, color: '#2c3e50' },
-  input: { borderBottomWidth: 1, borderColor: '#eee', marginBottom: 15, padding: 10 },
-  btnScan: { backgroundColor: '#3498db', flexDirection: 'row', padding: 15, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: '#0b0f14' },
+  card: {
+    backgroundColor: '#111827',
+    padding: 20,
+    borderRadius: 15,
+    elevation: 3,
+    margin: 20,
+    marginTop: 40,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+  },
+  title: { fontSize: 18, fontWeight: '900', marginBottom: 15, color: '#e2e8f0' },
+  input: {
+    borderBottomWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 15,
+    padding: 10,
+    color: '#e2e8f0',
+    fontSize: 15,
+  },
+  btnScan: {
+    backgroundColor: '#0891b2',
+    flexDirection: 'row',
+    padding: 15,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   btnScanTxt: { color: '#fff', fontWeight: 'bold', marginLeft: 10 },
   grid: { padding: 10 },
   photoBox: { width: '100%', height: 400, backgroundColor: '#000', borderRadius: 15, marginBottom: 20, overflow: 'hidden' },
   img: { width: '100%', height: 400, resizeMode: 'contain' },
   dot: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: 'red', borderWidth: 2, borderColor: '#fff' },
-  zoomInfo: { textAlign: 'center', color: '#7f8c8d', marginBottom: 10, fontSize: 12, marginTop: 5 },
-  btnSave: { backgroundColor: '#2ecc71', padding: 20, borderRadius: 15, alignItems: 'center', margin: 20 },
+  zoomInfo: { textAlign: 'center', color: '#94a3b8', marginBottom: 10, fontSize: 12, marginTop: 5 },
+  btnSave: { backgroundColor: '#059669', padding: 20, borderRadius: 15, alignItems: 'center', margin: 20 },
   btnSaveTxt: { color: '#fff', fontWeight: 'bold' },
   loader: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }
 });

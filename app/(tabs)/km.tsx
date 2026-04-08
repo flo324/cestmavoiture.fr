@@ -1,16 +1,23 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  Animated,
+  Image,
+  ImageBackground,
   Platform,
-  SafeAreaView,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useKilometrage } from '../../context/KilometrageContext';
+import { UI_THEME } from '../../constants/uiTheme';
+import { STORAGE_KM_MEMOS } from '../../constants/scanConstants';
+import { userGetItem } from '../../services/userStorage';
 
 /** Odomètre total : chaîne type "190 000" → nombre, sinon 0 */
 function parseOdometerKm(raw: string | undefined | null): number {
@@ -42,10 +49,37 @@ type BubbleDef = {
   label: string;
   icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   value: number;
+  unit?: string;
 };
+
+type KmMemo = { id: string; titre: string; note: string; imageUri: string; createdAt: number };
 
 export default function KilometrageScreen() {
   const ctx = useKilometrage();
+  const [memos, setMemos] = useState<KmMemo[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const raw = await userGetItem(STORAGE_KM_MEMOS);
+          if (cancelled) return;
+          if (!raw) {
+            setMemos([]);
+            return;
+          }
+          const parsed = JSON.parse(raw) as KmMemo[];
+          setMemos(Array.isArray(parsed) ? parsed : []);
+        } catch {
+          if (!cancelled) setMemos([]);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   const totalKm = useMemo(() => parseOdometerKm(ctx?.km), [ctx?.km]);
 
@@ -81,37 +115,16 @@ export default function KilometrageScreen() {
         icon: 'calendar-star',
         value: readNumericStat(ctx, 'kmAn'),
       },
+      {
+        key: 'speed',
+        label: 'Vitesse',
+        icon: 'speedometer-medium',
+        value: readNumericStat(ctx, 'speedKmh'),
+        unit: 'km/h',
+      },
     ],
     [ctx, totalKm]
   );
-
-  const scales = useRef(
-    bubbles.map(() => new Animated.Value(1))
-  ).current;
-
-  useEffect(() => {
-    const loops = scales.map((scale, index) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(scale, {
-            toValue: 1.05,
-            duration: 900,
-            delay: index * 120,
-            useNativeDriver: true,
-          }),
-          Animated.timing(scale, {
-            toValue: 1,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-        ])
-      )
-    );
-    loops.forEach((l) => l.start());
-    return () => {
-      loops.forEach((l) => l.stop());
-    };
-  }, [scales]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -119,58 +132,105 @@ export default function KilometrageScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <MaterialCommunityIcons name="speedometer" size={36} color="#f39c12" />
-          <Text style={styles.title}>Kilométrage</Text>
-          <Text style={styles.subtitle}>Synthèse</Text>
-        </View>
+        <ImageBackground
+          source={{ uri: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=1600&q=70' }}
+          style={styles.heroBanner}
+          imageStyle={styles.heroBannerImage}
+        >
+          <LinearGradient
+            colors={['rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)', UI_THEME.bg]}
+            locations={[0, 0.56, 1]}
+            style={styles.heroOverlay}
+          >
+            <View style={styles.heroIconWrap}>
+              <MaterialCommunityIcons name="speedometer" size={28} color={UI_THEME.cyan} />
+            </View>
+            <Text style={styles.title}>Kilométrage</Text>
+            <Text style={styles.subtitle}>Suivi précis des distances et stats de conduite</Text>
+          </LinearGradient>
+        </ImageBackground>
 
         <View style={styles.grid}>
           {bubbles.map((b, idx) => (
-            <Animated.View
-              key={b.key}
-              style={[
-                styles.bubble,
-                { transform: [{ scale: scales[idx] ?? new Animated.Value(1) }] },
-              ]}
-            >
+            <Pressable key={b.key} style={({ pressed }) => [styles.bubble, pressed && styles.scaleDown]}>
               <MaterialCommunityIcons name={b.icon} size={28} color="#fff" />
               <Text style={styles.bubbleLabel}>{b.label}</Text>
               <Text style={styles.bubbleValue}>{formatKmFr(b.value)}</Text>
-              <Text style={styles.bubbleUnit}>km</Text>
-            </Animated.View>
+              <Text style={styles.bubbleUnit}>{b.unit ?? 'km'}</Text>
+            </Pressable>
           ))}
         </View>
+
+        {memos.length > 0 ? (
+          <View style={styles.memoBlock}>
+            <Text style={styles.memoTitle}>Mémos photo (scan)</Text>
+            {memos.map((m) => (
+              <View key={m.id} style={styles.memoCard}>
+                {m.imageUri ? (
+                  <Image source={{ uri: m.imageUri }} style={styles.memoThumb} />
+                ) : null}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.memoTitre}>{m.titre}</Text>
+                  {m.note ? <Text style={styles.memoNote}>{m.note}</Text> : null}
+                  <Text style={styles.memoDate}>
+                    {new Date(m.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: '#f2f5f8',
-  },
+  safe: { flex: 1, backgroundColor: UI_THEME.bg },
   scrollContent: {
     paddingBottom: Platform.OS === 'web' ? 24 : 100,
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'web' ? 16 : 8,
   },
-  header: {
+  heroBanner: {
+    height: 140,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 0.5,
+    borderColor: UI_THEME.cyanBorder,
+  },
+  heroBannerImage: { resizeMode: 'cover' },
+  heroOverlay: {
+    flex: 1,
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'flex-end',
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+  },
+  heroIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,242,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,242,255,0.4)',
+    marginBottom: 8,
   },
   title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginTop: 8,
+    fontSize: 23,
+    fontWeight: '900',
+    color: UI_THEME.textPrimary,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#7f8c8d',
+    fontSize: 12,
+    color: '#cbd5e1',
     marginTop: 4,
+    textAlign: 'center',
   },
+  scaleDown: { transform: [{ scale: 0.98 }] },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -181,13 +241,13 @@ const styles = StyleSheet.create({
     width: '48%',
     aspectRatio: 1,
     maxWidth: Platform.OS === 'web' ? 170 : undefined,
-    backgroundColor: '#2c3e50',
+    backgroundColor: UI_THEME.glass,
     borderRadius: 20,
     padding: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#f39c12',
+    borderWidth: 0.5,
+    borderColor: UI_THEME.cyanBorder,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -217,4 +277,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  memoBlock: { marginTop: 20 },
+  memoTitle: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  memoCard: {
+    flexDirection: 'row',
+    backgroundColor: UI_THEME.glass,
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 0.5,
+    borderColor: UI_THEME.goldBorder,
+    gap: 10,
+  },
+  memoThumb: { width: 72, height: 72, borderRadius: 8, backgroundColor: '#0f172a' },
+  memoTitre: { color: '#e2e8f0', fontWeight: '700', fontSize: 14 },
+  memoNote: { color: '#cbd5e1', fontSize: 12, marginTop: 4, lineHeight: 18 },
+  memoDate: { color: '#64748b', fontSize: 10, marginTop: 6 },
 });

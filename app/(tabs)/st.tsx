@@ -1,24 +1,32 @@
-import { useRouter } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 export default function EntretienScreen() {
-  const router = useRouter();
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={() => router.back()}><Text style={styles.back}>⬅ Retour</Text></TouchableOpacity>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.title}>IA ENTRETIEN</Text>
       <View style={styles.iaBox}>
-        <Text style={styles.iaTxt}>🚩 <Text style={{fontWeight:'bold'}}>COURROIE :</Text> À changer (Urgence !)</Text>
-        <Text style={styles.iaTxt}>✅ <Text style={{fontWeight:'bold'}}>VIDANGE :</Text> OK jusqu'à 205 000 km</Text>
+        <Text style={styles.iaTxt}>
+          🚩 <Text style={{ fontWeight: 'bold' }}>COURROIE :</Text> À changer (Urgence !)
+        </Text>
+        <Text style={styles.iaTxt}>
+          ✅ <Text style={{ fontWeight: 'bold' }}>VIDANGE :</Text> OK jusqu&apos;à 205 000 km
+        </Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'white', padding: 25, paddingTop: 60 },
-  back: { fontSize: 16, color: '#2c3e50', marginBottom: 20 },
-  title: { fontSize: 22, fontWeight: 'bold', marginBottom: 30 },
-  iaBox: { backgroundColor: '#fdf2f2', padding: 20, borderRadius: 15, borderLeftWidth: 6, borderLeftColor: '#f39c12' },
-  iaTxt: { fontSize: 14, marginBottom: 10 }
+  container: { flex: 1, backgroundColor: '#0b0f14', padding: 25, paddingTop: 24 },
+  title: { fontSize: 22, fontWeight: '800', marginBottom: 24, color: '#e2e8f0', textAlign: 'center' },
+  iaBox: {
+    backgroundColor: '#111827',
+    padding: 20,
+    borderRadius: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#00F2FF',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+  },
+  iaTxt: { fontSize: 14, marginBottom: 10, color: '#cbd5e1' },
 });

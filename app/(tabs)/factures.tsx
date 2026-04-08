@@ -1,6 +1,4 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -16,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const { width, height } = Dimensions.get('window');
 const STORAGE_KEY = '@mes_factures_v5';
@@ -30,6 +29,8 @@ interface ReparationFolder {
   prixTTC: string;
   details: string;
   imageUri: string;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export default function FacturesScreen() {
@@ -42,10 +43,20 @@ export default function FacturesScreen() {
   const [step, setStep] = useState<'idle' | 'hasPhoto' | 'analyzing'>('idle');
   const [capturedImage, setCapturedImage] = useState<{ uri: string; base64: string } | null>(null);
   const [selectedRep, setSelectedRep] = useState<ReparationFolder | null>(null);
+  const formatDateTime = (ts?: number) =>
+    ts
+      ? new Date(ts).toLocaleString('fr-FR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : '-';
 
   useEffect(() => {
     const loadData = async () => {
-      const saved = await AsyncStorage.getItem(STORAGE_KEY);
+      const saved = await userGetItem(STORAGE_KEY);
       if (saved) setReparations(JSON.parse(saved));
     };
     loadData();
@@ -62,21 +73,12 @@ export default function FacturesScreen() {
     }
   }, [params]);
 
-  const handleStartScan = async () => {
-    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
-    if (!granted) return Alert.alert('Erreur', 'Accès caméra requis');
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.6, base64: true });
-    if (!result.canceled) {
-      setCapturedImage({ uri: result.assets[0].uri, base64: result.assets[0].base64 || '' });
-      setStep('hasPhoto');
-    }
-  };
-
   const analyserFactureAvecIA = async () => {
     if (!capturedImage) return;
     setStep('analyzing');
     try {
       const now = new Date();
+      const nowTs = Date.now();
       const date = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
       const nouvelle = {
         id: Date.now().toString(),
@@ -88,10 +90,12 @@ export default function FacturesScreen() {
         prixTTC: '0',
         details: 'Analyse IA désactivée temporairement.',
         imageUri: capturedImage.uri,
+        createdAt: nowTs,
+        updatedAt: nowTs,
       };
       const updated = [nouvelle, ...reparations];
       setReparations(updated);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      await userSetItem(STORAGE_KEY, JSON.stringify(updated));
       setStep('idle');
       setCapturedImage(null);
     } catch (e) {
@@ -121,6 +125,12 @@ export default function FacturesScreen() {
               <Text style={{ color: '#3498db', fontSize: 11 }}>
                 {item.date} • {item.km} km
               </Text>
+              <Text style={{ color: '#7f93ab', fontSize: 10, marginTop: 2 }}>
+                Créé le: {formatDateTime(item.createdAt)}
+              </Text>
+              <Text style={{ color: '#7f93ab', fontSize: 10, marginTop: 1 }}>
+                Modifié le: {formatDateTime(item.updatedAt || item.createdAt)}
+              </Text>
             </View>
             <Text style={{ color: '#2ecc71', fontWeight: 'bold' }}>{item.prixTTC} €</Text>
           </TouchableOpacity>
@@ -134,13 +144,6 @@ export default function FacturesScreen() {
         }
         contentContainerStyle={{ padding: 20 }}
       />
-      <View style={styles.bottomArea}>
-        <TouchableOpacity style={styles.scanButtonAction} onPress={handleStartScan}>
-          <MaterialCommunityIcons name="camera-outline" size={24} color="#fff" />
-          <Text style={styles.scanButtonText}>SCANNER LE DOCUMENT</Text>
-        </TouchableOpacity>
-      </View>
-
       <Modal visible={step !== 'idle'} animationType="fade">
         <View style={styles.fullOverlay}>
           {step === 'hasPhoto' && (
@@ -160,11 +163,20 @@ export default function FacturesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f2f5f8' },
-  header: { backgroundColor: '#fff', padding: 20, paddingTop: 40, alignItems: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '900' },
+  container: { flex: 1, backgroundColor: '#0b0f14' },
+  header: {
+    backgroundColor: '#0b0f14',
+    padding: 20,
+    paddingTop: 40,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f2937',
+  },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: '#e2e8f0' },
   folderCard: {
-    backgroundColor: '#2c3e50',
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1f2937',
     padding: 20,
     borderRadius: 20,
     marginBottom: 12,
@@ -172,11 +184,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100 },
-  emptyText: { fontSize: 18, fontWeight: 'bold', color: '#7f8c8d', marginTop: 20 },
-  emptySubText: { fontSize: 14, color: '#bdc3c7' },
-  bottomArea: { position: 'absolute', bottom: 40, width: '100%', alignItems: 'center' },
-  scanButtonAction: { backgroundColor: '#3498db', flexDirection: 'row', padding: 15, borderRadius: 30 },
-  scanButtonText: { color: '#fff', fontWeight: 'bold', marginLeft: 10 },
+  emptyText: { fontSize: 18, fontWeight: 'bold', color: '#94a3b8', marginTop: 20 },
+  emptySubText: { fontSize: 14, color: '#64748b' },
   fullOverlay: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
   cropView: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   preview: { position: 'absolute', width: '100%', height: '100%' },

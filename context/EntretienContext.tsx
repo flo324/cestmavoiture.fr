@@ -1,5 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useAuth } from './AuthContext';
+import { userGetItem, userSetItem } from '../services/userStorage';
 
 const STORAGE_KEY = '@cestmavoiture_entretien_tasks_v1';
 
@@ -26,12 +27,13 @@ type EntretienContextValue = {
 const EntretienContext = createContext<EntretienContextValue | null>(null);
 
 export const EntretienProvider = ({ children }: { children: React.ReactNode }) => {
+  const { currentUserId } = useAuth();
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        const raw = await userGetItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as MaintenanceTask[];
           const normalized = parsed.map((t) => ({
@@ -46,7 +48,7 @@ export const EntretienProvider = ({ children }: { children: React.ReactNode }) =
       }
     };
     load();
-  }, []);
+  }, [currentUserId]);
 
   const addMaintenanceTask = useCallback(
     async (payload: { title: string; category?: MaintenanceCategory; source?: string }) => {
@@ -61,7 +63,7 @@ export const EntretienProvider = ({ children }: { children: React.ReactNode }) =
       };
       setTasks((prev) => {
         const next = [...prev, task];
-        AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+        userSetItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
         return next;
       });
     },
@@ -71,7 +73,7 @@ export const EntretienProvider = ({ children }: { children: React.ReactNode }) =
   const updateTaskCategory = useCallback(async (id: string, category: MaintenanceCategory) => {
     setTasks((prev) => {
       const next = prev.map((t) => (t.id === id ? { ...t, category } : t));
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      userSetItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
       return next;
     });
   }, []);

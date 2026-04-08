@@ -2,17 +2,17 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
-export default function BatterieScreen() {
+export default function PharesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Batterie</Text>
+        <Text style={styles.headerTitle}>Phares</Text>
       </View>
 
       <View style={styles.content}>
-        <MaterialCommunityIcons name="battery-unknown" size={80} color="#bdc3c7" />
-        <Text style={styles.title}>Infos Batterie</Text>
-        <Text style={styles.subtitle}>Cette section est vide pour le moment.</Text>
+        <MaterialCommunityIcons name="car-light-high" size={80} color="#bdc3c7" />
+        <Text style={styles.title}>Suivi des phares</Text>
+        <Text style={styles.subtitle}>Cette section est prete pour vos controles phares.</Text>
       </View>
     </SafeAreaView>
   );
@@ -34,3 +34,4 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '800', color: '#e2e8f0', marginTop: 20 },
   subtitle: { fontSize: 14, color: '#94a3b8', marginTop: 10, textAlign: 'center', paddingHorizontal: 24 },
 });
+
