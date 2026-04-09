@@ -137,7 +137,7 @@ export default function DocsScreen() {
       : '-';
 
   const callGeminiForBilan = async (payload: Record<string, unknown>) => {
-    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
     if (!apiKey) return '';
     const prompt = [
       'Tu es un expert automobile.',

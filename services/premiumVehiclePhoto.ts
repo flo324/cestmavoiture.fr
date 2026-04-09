@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
 const REMOVE_BG_API_KEY = process.env.EXPO_PUBLIC_REMOVEBG_API_KEY;
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
 const GEMINI_MODEL = 'gemini-1.5-flash';
 
 type StudioPalette = {

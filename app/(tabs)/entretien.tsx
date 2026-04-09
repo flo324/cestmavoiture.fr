@@ -240,7 +240,7 @@ function estimateBatterieRisk(b: EntretienModules['batterie']): string {
 }
 
 async function askGeminiWarning(prompt: string): Promise<string> {
-  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
   if (!apiKey) throw new Error('missing gemini key');
 
   const response = await fetch(
@@ -285,7 +285,7 @@ async function generateMaintenanceWithAI(params: {
   immat: string;
   km: number;
 }): Promise<{ summary: string; suggestions: MaintenanceSuggestion[] }> {
-  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
   if (!apiKey) {
     return {
       summary: 'Mode IA distant indisponible. Recommandations standards appliquees.',
@@ -627,8 +627,8 @@ export default function EntretienScreen() {
   };
 
   const findAndSaveManual = async () => {
-    if (!process.env.EXPO_PUBLIC_GEMINI_API_KEY) {
-      Alert.alert('Cle API', 'Ajoutez EXPO_PUBLIC_GEMINI_API_KEY ou utilisez une URL PDF directe (champ ci-dessous).');
+    if (!process.env.NEXT_PUBLIC_GOOGLE_API_KEY) {
+      Alert.alert('Cle API', 'Ajoutez NEXT_PUBLIC_GOOGLE_API_KEY ou utilisez une URL PDF directe (champ ci-dessous).');
       return;
     }
     if (!vehicleData?.modele?.trim()) {

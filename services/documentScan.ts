@@ -32,7 +32,7 @@ function parseBox(raw: string): Box | null {
 }
 
 async function detectDocumentBoxWithIA(uri: string): Promise<Box | null> {
-  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
   if (!apiKey) return null;
   try {
     const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
