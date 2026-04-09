@@ -57,7 +57,10 @@ export default function OnboardingScreen() {
     await userSetItem(ONBOARDING_STATUS_KEY, JSON.stringify(status));
   };
 
-  const saveVehicleProfile = async (photoToPersist: string) => {
+  const saveVehicleProfile = async (
+    photoToPersist: string,
+    palette: { center: string; edge: string } = { center: '#334155', edge: '#0B1120' }
+  ) => {
     const id = 'default';
     const payload = [
       {
@@ -68,8 +71,8 @@ export default function OnboardingScreen() {
         modele: modele.trim(),
         immat: immat.trim(),
         photoUri: photoToPersist.trim(),
-        photoBgCenter: '#334155',
-        photoBgEdge: '#0B1120',
+        photoBgCenter: palette.center,
+        photoBgEdge: palette.edge,
       },
     ];
     await userSetItem(STORAGE_KEY_VEHICLES, JSON.stringify(payload));
@@ -111,12 +114,14 @@ export default function OnboardingScreen() {
     setBusy(true);
     try {
       let profilePhotoUri = photoUri.trim();
+      let profilePalette = { center: '#334155', edge: '#0B1120' };
       if (!profilePhotoUri) {
         setPhotoAutoStatus('loading');
         const autoPhoto = await autoAttachVehiclePhoto(modele.trim());
         if (autoPhoto) {
-          profilePhotoUri = autoPhoto;
-          setPhotoUri(autoPhoto);
+          profilePhotoUri = autoPhoto.photoUri;
+          profilePalette = autoPhoto.palette;
+          setPhotoUri(autoPhoto.photoUri);
           setPhotoAutoStatus('done');
         } else {
           setPhotoAutoStatus('failed');
@@ -125,7 +130,7 @@ export default function OnboardingScreen() {
         setPhotoAutoStatus('done');
       }
 
-      await saveVehicleProfile(profilePhotoUri);
+      await saveVehicleProfile(profilePhotoUri, profilePalette);
       setManualAutoStatus('loading');
       autoAttachManualForVehicle(modele.trim(), immat.trim())
         .then((ok) => setManualAutoStatus(ok ? 'done' : 'failed'))
@@ -233,12 +238,12 @@ export default function OnboardingScreen() {
               <Text style={styles.manualStatusTitle}>Photo véhicule automatique</Text>
               <Text style={styles.manualStatusText}>
                 {photoAutoStatus === 'loading'
-                  ? 'Recherche et téléchargement de la photo du modèle en cours...'
+                  ? 'Recherche, détourage et intégration premium de la photo en cours...'
                   : photoAutoStatus === 'done'
-                    ? 'Photo du modèle prête dans le profil (modifiable à tout moment).'
+                    ? 'Photo du modèle optimisée (fond retiré si disponible) et prête dans le profil.'
                     : photoAutoStatus === 'failed'
                       ? 'Photo auto non trouvée. Vous pourrez en choisir une dans Profil.'
-                      : 'Une photo modèle sera ajoutée automatiquement si aucune photo n est fournie.'}
+                      : 'Une photo modèle sera ajoutée et optimisée automatiquement si aucune photo n est fournie.'}
               </Text>
             </View>
             <View style={styles.manualStatusCard}>

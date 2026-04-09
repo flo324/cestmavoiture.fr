@@ -569,7 +569,15 @@ export default function DocsScreen() {
               <Pressable onPress={resetModal} style={({ pressed }) => [styles.cancelBtn, pressed && styles.scaleDown]}>
                 <Text style={styles.cancelBtnText}>Annuler</Text>
               </Pressable>
-              <Pressable onPress={handleAddDocument} style={({ pressed }) => [styles.saveBtn, pressed && styles.scaleDown]}>
+              <Pressable
+                onPress={() =>
+                  Alert.alert('Confirmer l’enregistrement', 'Voulez-vous enregistrer ce document ?', [
+                    { text: 'Annuler', style: 'cancel' },
+                    { text: 'Enregistrer', onPress: handleAddDocument },
+                  ])
+                }
+                style={({ pressed }) => [styles.saveBtn, pressed && styles.scaleDown]}
+              >
                 <Text style={styles.saveBtnText}>Valider</Text>
               </Pressable>
             </View>

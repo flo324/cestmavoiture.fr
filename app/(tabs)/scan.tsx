@@ -603,7 +603,16 @@ export default function ScanScreen() {
           </Text>
         )}
 
-        <TouchableOpacity style={styles.primaryBtn} onPress={persistAndNavigate} activeOpacity={0.9}>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() =>
+            Alert.alert('Confirmer l’enregistrement', 'Voulez-vous enregistrer ce dossier ?', [
+              { text: 'Annuler', style: 'cancel' },
+              { text: 'Enregistrer', onPress: () => void persistAndNavigate() },
+            ])
+          }
+          activeOpacity={0.9}
+        >
           <Text style={styles.primaryBtnText}>ENREGISTRER LE DOSSIER</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.ghostBtn} onPress={() => setStep('pick')}>

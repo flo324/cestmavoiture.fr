@@ -225,7 +225,7 @@ export default function ScanPermis() {
       if (!createdAt) setCreatedAt(formatNow());
       setUpdatedAt(formatNow());
       setHasSavedDossier(true);
-      Alert.alert('Dossier créé', 'Votre permis a bien été enregistré.', [
+      Alert.alert('Enregistré', 'Votre dossier permis a bien été enregistré.', [
         { text: 'OK', onPress: goDocs },
       ]);
     } catch (error) {
@@ -360,7 +360,16 @@ export default function ScanPermis() {
               <TextInput style={styles.input} value={ville} onChangeText={setVille} placeholder="Optionnel" />
               <Text style={styles.label}>Département</Text>
               <TextInput style={styles.input} value={departement} onChangeText={setDepartement} placeholder="Optionnel" />
-              <TouchableOpacity style={styles.saveBtn} onPress={() => setCreateStep(3)} activeOpacity={0.9}>
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={() =>
+                  Alert.alert('Valider les informations ?', 'Voulez-vous enregistrer ces informations avant de continuer ?', [
+                    { text: 'Annuler', style: 'cancel' },
+                    { text: 'Enregistrer', onPress: () => setCreateStep(3) },
+                  ])
+                }
+                activeOpacity={0.9}
+              >
                 <Text style={styles.saveBtnText}>VALIDER LES INFORMATIONS</Text>
               </TouchableOpacity>
             </View>
@@ -405,7 +414,16 @@ export default function ScanPermis() {
         ) : null}
 
         {flow === 'create' && createStep === 3 ? (
-          <TouchableOpacity style={styles.saveBtn} onPress={saveNow} activeOpacity={0.9}>
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={() =>
+              Alert.alert('Confirmer l’enregistrement', 'Voulez-vous créer et enregistrer ce dossier permis ?', [
+                { text: 'Annuler', style: 'cancel' },
+                { text: 'Enregistrer', onPress: () => void saveNow() },
+              ])
+            }
+            activeOpacity={0.9}
+          >
             <MaterialCommunityIcons name="content-save-outline" size={20} color="#00F2FF" />
             <Text style={styles.saveBtnText}>VALIDER ET CRÉER LE DOSSIER</Text>
           </TouchableOpacity>

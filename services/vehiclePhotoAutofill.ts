@@ -1,4 +1,5 @@
 import { documentDirectory, downloadAsync } from 'expo-file-system/legacy';
+import { enhanceVehiclePhotoPremium } from './premiumVehiclePhoto';
 
 function sanitizeFilePart(value: string): string {
   return String(value || 'vehicule')
@@ -34,14 +35,23 @@ async function tryDownloadImage(url: string, modele: string): Promise<string | n
   }
 }
 
-export async function autoAttachVehiclePhoto(modele: string): Promise<string | null> {
+export async function autoAttachVehiclePhoto(modele: string): Promise<{
+  photoUri: string;
+  palette: { center: string; edge: string };
+} | null> {
   const model = String(modele || '').trim();
   if (!model) return null;
 
   const candidates = buildUnsplashCandidates(model);
   for (const url of candidates) {
     const local = await tryDownloadImage(url, model);
-    if (local) return local;
+    if (local) {
+      const premium = await enhanceVehiclePhotoPremium(local);
+      return {
+        photoUri: premium.photoUri,
+        palette: premium.palette,
+      };
+    }
   }
   return null;
 }

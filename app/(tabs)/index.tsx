@@ -3,7 +3,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BarChart3, ClipboardList, FileText, PenTool, Settings } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Alert, Animated, Easing, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Ellipse, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -93,6 +93,9 @@ export default function HomeScreen() {
   const compact = screenH < 820;
   const marqueeAnim = useRef(new Animated.Value(0)).current;
   const alertPulse = useRef(new Animated.Value(1)).current;
+  const onlineBlink = useRef(new Animated.Value(1)).current;
+  const premiumPulse = useRef(new Animated.Value(1)).current;
+  const brandRollAnim = useRef(new Animated.Value(0)).current;
 
   const kmStats = useMemo(() => {
     const total = parseOdometerKm(kmCtx?.km);
@@ -198,85 +201,32 @@ export default function HomeScreen() {
   };
 
   const dashboardTickerText = useMemo(() => {
-    const messages: string[] = [];
-    if (ctBanner.daysLeft == null) {
-      messages.push('CT: DATE NON DISPONIBLE, À RENSEIGNER');
-    } else if (ctBanner.daysLeft < 0) {
-      messages.push(`URGENT: CT EXPIRÉ DEPUIS ${Math.abs(ctBanner.daysLeft)} JOURS`);
-    } else if (ctBanner.daysLeft < 30) {
-      messages.push(`PRIORITÉ: CT À FAIRE DANS ${ctBanner.daysLeft} JOURS`);
-    } else {
-      messages.push(`CT OK: ÉCHÉANCE DANS ${ctBanner.daysLeft} JOURS`);
-    }
-
-    if (entretienKpi.filledModules === 0) {
-      messages.push('ENTRETIEN: AUCUN MODULE INITIALISÉ');
-    } else if (entretienKpi.filledModules < 3) {
-      messages.push(`ENTRETIEN: ${entretienKpi.filledModules}/3 MODULES ACTIFS`);
-    } else {
-      messages.push('ENTRETIEN: TOUS LES MODULES SONT À JOUR');
-    }
-
-    messages.push(`KILOMÉTRAGE TOTAL: ${formatKmFr(kmStats.total)} KM`);
-    return `INFO IMPORTANTE • ${messages.join(' • ')} •`;
-  }, [ctBanner.daysLeft, entretienKpi.filledModules, kmStats.total]);
+    return "SCAN AVEC L'IA : ABONNEZ-VOUS AU PREMIUM ET PROFITEZ DE TOUTES LES FONCTIONNALITÉS IA •";
+  }, []);
 
   const tickerTone = useMemo(() => {
-    if (ctBanner.daysLeft == null) {
-      return {
-        dot: '#8e8e8e',
-        border: 'rgba(148,163,184,0.45)',
-        text: '#dbeafe',
-        label: 'INFO',
-        gradient: ['rgba(148,163,184,0.16)', 'rgba(7,10,16,0.85)', 'rgba(148,163,184,0.14)'] as const,
-      };
-    }
-    if (ctBanner.daysLeft < 30) {
-      return {
-        priority: 'high' as const,
-        dot: '#ef4444',
-        border: 'rgba(239,68,68,0.72)',
-        text: '#ffe4e6',
-        label: 'ALERTE PRIORITAIRE',
-        gradient: ['rgba(239,68,68,0.34)', 'rgba(20,8,10,0.94)', 'rgba(239,68,68,0.26)'] as const,
-      };
-    }
-    if (ctBanner.daysLeft < 90) {
-      return {
-        priority: 'medium' as const,
-        dot: '#f59e0b',
-        border: 'rgba(245,158,11,0.7)',
-        text: '#fff3c4',
-        label: 'VIGILANCE',
-        gradient: ['rgba(245,158,11,0.3)', 'rgba(18,12,7,0.92)', 'rgba(245,158,11,0.22)'] as const,
-      };
-    }
     return {
-      priority: 'low' as const,
-      dot: '#22c55e',
-      border: 'rgba(34,197,94,0.64)',
-      text: '#ecfdf5',
-      label: 'INFO LIVE',
-      gradient: ['rgba(0,242,255,0.24)', 'rgba(7,10,16,0.92)', 'rgba(212,175,55,0.2)'] as const,
+      priority: 'premium' as const,
+      dot: '#fbbf24',
+      border: 'rgba(251,191,36,0.7)',
+      text: '#fff7da',
+      label: 'IA PREMIUM',
+      gradient: ['rgba(251,191,36,0.26)', 'rgba(22,12,5,0.94)', 'rgba(0,242,255,0.2)'] as const,
     };
-  }, [ctBanner.daysLeft]);
+  }, []);
 
   useEffect(() => {
-    if (tickerTone.priority !== 'high') {
-      alertPulse.setValue(1);
-      return;
-    }
     const pulseLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(alertPulse, {
-          toValue: 1.22,
-          duration: 520,
+          toValue: 1.18,
+          duration: 640,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(alertPulse, {
           toValue: 1,
-          duration: 520,
+          duration: 640,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -284,7 +234,28 @@ export default function HomeScreen() {
     );
     pulseLoop.start();
     return () => pulseLoop.stop();
-  }, [alertPulse, tickerTone.priority]);
+  }, [alertPulse]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(premiumPulse, {
+          toValue: 1.08,
+          duration: 700,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(premiumPulse, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [premiumPulse]);
 
   useEffect(() => {
     marqueeAnim.setValue(0);
@@ -300,9 +271,83 @@ export default function HomeScreen() {
     return () => loop.stop();
   }, [marqueeAnim, dashboardTickerText]);
 
+  useEffect(() => {
+    // Au démarrage: "recherche de connexion" courte, puis état stable.
+    onlineBlink.setValue(1);
+    const startupBlink = Animated.sequence([
+      Animated.timing(onlineBlink, {
+        toValue: 0.28,
+        duration: 300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(onlineBlink, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(onlineBlink, {
+        toValue: 0.28,
+        duration: 300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(onlineBlink, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(onlineBlink, {
+        toValue: 0.28,
+        duration: 300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(onlineBlink, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(onlineBlink, {
+        toValue: 0.28,
+        duration: 300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(onlineBlink, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]);
+    startupBlink.start();
+    return () => startupBlink.stop();
+  }, [onlineBlink]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(brandRollAnim, {
+        toValue: 1,
+        duration: 11000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [brandRollAnim]);
+
   const marqueeTranslateX = marqueeAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -520],
+  });
+  const brandRollTranslateY = brandRollAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -26],
   });
 
   return (
@@ -324,12 +369,31 @@ export default function HomeScreen() {
         <View style={[styles.header, compact ? styles.headerCompact : null]}>
           <View style={styles.headerBrandRow}>
             <GarageConnectLogo size="sm" />
-            <View style={styles.headerBrandTextCol}>
-              <Text style={styles.headerBrandTop}>GARAGE</Text>
-              <Text style={styles.headerBrandBottom}>CONNECT</Text>
+            <View style={styles.brandRollViewport}>
+              <Animated.View style={[styles.brandRollTrack, { transform: [{ translateY: brandRollTranslateY }] }]}>
+                <View style={styles.headerBrandTextCol}>
+                  <Text style={styles.headerBrandTop}>GARAGE</Text>
+                  <Text style={styles.headerBrandBottom}>CONNECT</Text>
+                </View>
+                <View style={styles.headerBrandTextCol}>
+                  <Text style={styles.headerBrandTop}>GARAGE</Text>
+                  <Text style={styles.headerBrandBottom}>CONNECT</Text>
+                </View>
+              </Animated.View>
             </View>
           </View>
-          <View style={styles.userIconPlaceholder} />
+          <View style={styles.headerRight}>
+            <Animated.View style={[styles.onlinePill, { opacity: onlineBlink }]}>
+              <View style={styles.onlineDot} />
+              <Text style={styles.onlineText}>EN LIGNE</Text>
+            </Animated.View>
+            <Pressable
+              style={({ pressed }) => [styles.notificationBtn, pressed && styles.notificationBtnPressed]}
+              onPress={() => Alert.alert('Notifications', "Vous n'avez pas de nouvelles notifications.")}
+            >
+              <MaterialCommunityIcons name="bell-outline" size={18} color="#7dd3fc" />
+            </Pressable>
+          </View>
         </View>
 
         {/* Vehicle Card Section */}
@@ -347,39 +411,49 @@ export default function HomeScreen() {
           />
           <View style={styles.vehicleCardTextContainer}>
             <Text style={styles.vehicleCardName}>{vehicleData.alias || vehicleData.modele || '-'}</Text>
-            <Text style={styles.vehicleCardModel}>MODÈLE {vehicleData.modele || '-'}</Text>
+            <Text style={styles.vehicleCardModel}>{vehicleData.modele || '-'}</Text>
             <View style={styles.immatBadge}>
               <Text style={styles.immatBadgeLabel}>IMMAT</Text>
               <Text style={styles.immatBadgeValue}>{vehicleData.immat || '-'}</Text>
             </View>
             <View style={styles.docQuickRow}>
               <Pressable
-                style={({ pressed }) => [styles.docQuickBtn, pressed ? styles.cardPressed : null]}
+                style={({ pressed }) => [styles.docQuickBtn, pressed ? styles.docQuickBtnPressed : null]}
                 onPress={() => {
                   if (!docPreview.permis) return;
                   setDocModal('permis');
                 }}
               >
-                <MaterialCommunityIcons
-                  name="card-account-details-outline"
-                  size={16}
-                  color={docPreview.permis ? '#7dd3fc' : '#64748b'}
-                />
-                <Text style={[styles.docQuickText, !docPreview.permis && styles.docQuickTextDisabled]}>Permis</Text>
+                {({ pressed }) => (
+                  <>
+                    {pressed ? <View pointerEvents="none" style={styles.docQuickFlash} /> : null}
+                    <MaterialCommunityIcons
+                      name="card-account-details-outline"
+                      size={16}
+                      color={docPreview.permis ? '#7dd3fc' : '#64748b'}
+                    />
+                    <Text style={[styles.docQuickText, !docPreview.permis && styles.docQuickTextDisabled]}>Permis</Text>
+                  </>
+                )}
               </Pressable>
               <Pressable
-                style={({ pressed }) => [styles.docQuickBtn, pressed ? styles.cardPressed : null]}
+                style={({ pressed }) => [styles.docQuickBtn, pressed ? styles.docQuickBtnPressed : null]}
                 onPress={() => {
                   if (!docPreview.cg) return;
                   setDocModal('cg');
                 }}
               >
-                <MaterialCommunityIcons
-                  name="file-document-outline"
-                  size={16}
-                  color={docPreview.cg ? '#f7e8b8' : '#64748b'}
-                />
-                <Text style={[styles.docQuickText, !docPreview.cg && styles.docQuickTextDisabled]}>Carte grise</Text>
+                {({ pressed }) => (
+                  <>
+                    {pressed ? <View pointerEvents="none" style={styles.docQuickFlash} /> : null}
+                    <MaterialCommunityIcons
+                      name="file-document-outline"
+                      size={16}
+                      color={docPreview.cg ? '#f7e8b8' : '#64748b'}
+                    />
+                    <Text style={[styles.docQuickText, !docPreview.cg && styles.docQuickTextDisabled]}>Carte grise</Text>
+                  </>
+                )}
               </Pressable>
             </View>
             <Text style={styles.vehicleCardKm}>{formatKmFr(kmStats.total)} KM</Text>
@@ -410,14 +484,12 @@ export default function HomeScreen() {
                     <Rect x="0" y="0" width="100%" height="100%" fill="url(#studioGradient)" />
                   </Svg>
                   <View style={styles.dropShadow} />
-                  <Image source={{ uri: vehicleData.photoUri }} style={styles.vehicleReflection} resizeMode="contain" />
                   <LinearGradient
                     colors={['rgba(255,255,255,0.35)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0)']}
                     start={{ x: 0.5, y: 0 }}
                     end={{ x: 0.5, y: 0.45 }}
                     style={styles.vehicleSpecular}
                   />
-                  <Image source={{ uri: vehicleData.photoUri }} style={styles.vehicleImageGlow} blurRadius={16} />
                   <View style={styles.vehicleVignette} />
                   <View style={styles.vehicleImageHighlight} />
                   <Image source={{ uri: vehicleData.photoUri }} style={styles.vehicleImage} resizeMode="contain" />
@@ -443,7 +515,16 @@ export default function HomeScreen() {
                   { backgroundColor: tickerTone.dot, transform: [{ scale: alertPulse }] },
                 ]}
               />
+              <MaterialCommunityIcons name="star-four-points" size={13} color="#fbbf24" style={styles.tickerSparkIcon} />
               <Text style={[styles.tickerHeader, { color: tickerTone.text }]}>{tickerTone.label}</Text>
+              <Pressable
+                onPress={() => router.push('/premium')}
+                style={({ pressed }) => [styles.tickerCtaWrap, pressed ? styles.tickerCtaPressed : null]}
+              >
+                <Animated.View style={[styles.tickerCtaPill, { transform: [{ scale: premiumPulse }] }]}>
+                  <Text style={styles.tickerCtaText}>S'ABONNER</Text>
+                </Animated.View>
+              </Pressable>
             </View>
             <View style={styles.tickerViewport}>
               <Animated.View style={[styles.tickerTrack, { transform: [{ translateX: marqueeTranslateX }] }]}>
@@ -466,55 +547,60 @@ export default function HomeScreen() {
                   styles.gridItem,
                   compact ? styles.gridItemCompact : null,
                   { borderColor },
-                  pressed ? styles.cardPressed : null,
+                  pressed ? styles.cardPressedStrong : null,
                 ]}
                 onPress={() => handleCategoryPress(category.id)}
               >
-                {category.id === 6 ? (
+                {({ pressed }) => (
                   <>
-                    <View style={[styles.iconContainer, { borderColor }]}>
-                      <Icon size={24} color={borderColor} />
-                    </View>
-                    <Text style={styles.categoryTitle}>{category.title}</Text>
-                    <Text style={styles.categoryDescription}>{category.description}</Text>
-                    <View
-                      style={[
-                        styles.kmStatusBadge,
-                        kmCtx?.isDriving
-                          ? styles.kmStatusDriving
-                          : kmCtx?.isTracking
-                            ? styles.kmStatusTracking
-                            : styles.kmStatusStopped,
-                      ]}
-                    >
-                      <Text style={styles.kmStatusText}>
-                        {kmCtx?.isDriving ? 'EN VOITURE' : kmCtx?.isTracking ? 'GPS ACTIF' : 'A L\'ARRET'}
-                      </Text>
-                    </View>
-                  </>
-                ) : category.id === 5 ? (
-                  <>
-                    <View style={[styles.iconContainer, { borderColor }]}>
-                      <Icon size={24} color={borderColor} />
-                    </View>
-                    <Text style={styles.categoryTitle}>{category.title}</Text>
-                    <Text style={styles.categoryDescription}>{category.description}</Text>
-                  </>
-                ) : category.id === 1 ? (
-                  <>
-                    <View style={[styles.iconContainer, { borderColor }]}>
-                      <Icon size={24} color={borderColor} />
-                    </View>
-                    <Text style={styles.categoryTitle}>{category.title}</Text>
-                    <Text style={styles.categoryDescription}>{category.description}</Text>
-                  </>
-                ) : (
-                  <>
-                    <View style={[styles.iconContainer, { borderColor }]}>
-                      <Icon size={24} color={borderColor} />
-                    </View>
-                    <Text style={styles.categoryTitle}>{category.title}</Text>
-                    <Text style={styles.categoryDescription}>{category.description}</Text>
+                    {pressed ? <View pointerEvents="none" style={styles.gridPressFlash} /> : null}
+                    {category.id === 6 ? (
+                      <>
+                        <View style={[styles.iconContainer, { borderColor }]}>
+                          <Icon size={24} color={borderColor} />
+                        </View>
+                        <Text style={styles.categoryTitle}>{category.title}</Text>
+                        <Text style={styles.categoryDescription}>{category.description}</Text>
+                        <View
+                          style={[
+                            styles.kmStatusBadge,
+                            kmCtx?.isDriving
+                              ? styles.kmStatusDriving
+                              : kmCtx?.isTracking
+                                ? styles.kmStatusTracking
+                                : styles.kmStatusStopped,
+                          ]}
+                        >
+                          <Text style={styles.kmStatusText}>
+                            {kmCtx?.isDriving ? 'EN VOITURE' : kmCtx?.isTracking ? 'GPS ACTIF' : 'A L\'ARRET'}
+                          </Text>
+                        </View>
+                      </>
+                    ) : category.id === 5 ? (
+                      <>
+                        <View style={[styles.iconContainer, { borderColor }]}>
+                          <Icon size={24} color={borderColor} />
+                        </View>
+                        <Text style={styles.categoryTitle}>{category.title}</Text>
+                        <Text style={styles.categoryDescription}>{category.description}</Text>
+                      </>
+                    ) : category.id === 1 ? (
+                      <>
+                        <View style={[styles.iconContainer, { borderColor }]}>
+                          <Icon size={24} color={borderColor} />
+                        </View>
+                        <Text style={styles.categoryTitle}>{category.title}</Text>
+                        <Text style={styles.categoryDescription}>{category.description}</Text>
+                      </>
+                    ) : (
+                      <>
+                        <View style={[styles.iconContainer, { borderColor }]}>
+                          <Icon size={24} color={borderColor} />
+                        </View>
+                        <Text style={styles.categoryTitle}>{category.title}</Text>
+                        <Text style={styles.categoryDescription}>{category.description}</Text>
+                      </>
+                    )}
                   </>
                 )}
               </Pressable>
@@ -575,6 +661,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  brandRollViewport: {
+    height: 30,
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  brandRollTrack: {
+    justifyContent: 'flex-start',
+  },
   headerBrandTextCol: {
     justifyContent: 'center',
   },
@@ -593,14 +687,49 @@ const styles = StyleSheet.create({
     marginTop: -1,
     textTransform: 'uppercase',
   },
-  userIconPlaceholder: {
+  notificationBtn: {
     width: 34,
     height: 34,
     borderRadius: 17,
     backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: UI_THEME.cyan,
     marginTop: 6,
+  },
+  notificationBtnPressed: {
+    transform: [{ scale: 0.95 }],
+    opacity: 0.92,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  onlinePill: {
+    marginTop: 6,
+    height: 24,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.58)',
+    backgroundColor: 'rgba(8,30,18,0.6)',
+  },
+  onlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 99,
+    marginRight: 6,
+    backgroundColor: '#22c55e',
+  },
+  onlineText: {
+    color: '#86efac',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   vehicleCard: {
     flexDirection: 'row',
@@ -666,6 +795,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.45)',
     backgroundColor: 'rgba(4,8,14,0.55)',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  docQuickBtnPressed: {
+    transform: [{ scale: 0.96 }],
+  },
+  docQuickFlash: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   docQuickText: {
     color: '#dbeafe',
@@ -712,7 +851,13 @@ const styles = StyleSheet.create({
     width: 156,
     height: 90,
     borderRadius: 12,
-    padding: 2,
+    padding: 0,
+    overflow: 'visible',
+    shadowColor: '#d4af37',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.26,
+    shadowRadius: 8,
+    elevation: 7,
   },
   silhouettePlaceholder: {
     flex: 1,
@@ -720,7 +865,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   vehicleStudioBg: {
     position: 'absolute',
@@ -744,11 +889,11 @@ const styles = StyleSheet.create({
   },
   dropShadow: {
     position: 'absolute',
-    bottom: 10,
-    width: '64%',
-    height: 14,
+    bottom: 6,
+    width: '68%',
+    height: 16,
     borderRadius: 999,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.56)',
     zIndex: 2,
   },
   vehicleReflection: {
@@ -762,24 +907,19 @@ const styles = StyleSheet.create({
   },
   silhouetteText: { color: '#FFFFFF', fontSize: 10 },
   vehicleImage: {
-    width: '100%',
-    height: '100%',
-    zIndex: 3,
-  },
-  vehicleImageGlow: {
     position: 'absolute',
-    width: '108%',
-    height: '108%',
-    opacity: 0.4,
-    zIndex: 1,
+    width: '118%',
+    height: '118%',
+    top: -12,
+    right: -16,
+    transform: [{ scale: 1.08 }],
+    zIndex: 3,
   },
   vehicleVignette: {
     position: 'absolute',
     width: '100%',
     height: '100%',
-    backgroundColor: 'rgba(4,8,16,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(4,8,16,0.16)',
     zIndex: 1,
   },
   vehicleImageHighlight: {
@@ -827,6 +967,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 6,
   },
+  tickerSparkIcon: {
+    marginRight: 5,
+  },
   tickerDot: {
     width: 8,
     height: 8,
@@ -839,6 +982,29 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '900',
     letterSpacing: 0.8,
+    textShadowColor: 'rgba(251,191,36,0.32)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 6,
+  },
+  tickerCtaPill: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0,242,255,0.58)',
+    backgroundColor: 'rgba(0,242,255,0.16)',
+  },
+  tickerCtaText: {
+    color: '#b6f6ff',
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.45,
+  },
+  tickerCtaPressed: {
+    transform: [{ scale: 0.96 }],
+  },
+  tickerCtaWrap: {
+    marginLeft: 'auto',
   },
   tickerViewport: {
     width: '100%',
@@ -875,6 +1041,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'flex-start',
     borderWidth: 1,
+    position: 'relative',
+    overflow: 'hidden',
   },
   gridItemCompact: {
     paddingHorizontal: 9,
@@ -883,6 +1051,19 @@ const styles = StyleSheet.create({
   },
   cardPressed: {
     transform: [{ scale: 0.98 }],
+  },
+  cardPressedStrong: {
+    transform: [{ scale: 0.965 }],
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5,
+  },
+  gridPressFlash: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   iconContainer: {
     width: 38,

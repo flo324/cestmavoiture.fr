@@ -99,14 +99,22 @@ export default function LocationScreen() {
           <TouchableOpacity
             style={styles.btnSave}
             onPress={() => {
-              saveDossier({
-                id: Date.now().toString(),
-                nomVoiture: info.voiture,
-                agence: info.agence,
-                date: info.date,
-                photos: currentPhotos
-              });
-              Alert.alert("Succès", "Dossier sauvegardé");
+              Alert.alert('Enregistrer ce dossier ?', 'Voulez-vous confirmer la sauvegarde de vos modifications ?', [
+                { text: 'Annuler', style: 'cancel' },
+                {
+                  text: 'Enregistrer',
+                  onPress: () => {
+                    saveDossier({
+                      id: Date.now().toString(),
+                      nomVoiture: info.voiture,
+                      agence: info.agence,
+                      date: info.date,
+                      photos: currentPhotos
+                    });
+                    Alert.alert('Enregistré', 'Dossier sauvegardé avec succès.');
+                  },
+                },
+              ]);
             }}
           >
             <Text style={styles.btnSaveTxt}>ENREGISTRER LE DOSSIER</Text>

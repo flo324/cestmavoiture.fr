@@ -20,7 +20,12 @@ import { useAuth } from '../context/AuthContext';
 import { userGetItem, userRemoveItem, userSetItem } from '../services/userStorage';
 
 const REMEMBER_LOGIN_KEY = '@garage_connect_remember_login_v1';
-type RememberLoginPayload = { email: string; password: string; remember: boolean };
+type RememberLoginPayload = {
+  remember: boolean;
+  email: string;
+  password: string;
+  byEmail?: Record<string, string>;
+};
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -35,6 +40,7 @@ export default function LoginScreen() {
   const [showPass, setShowPass] = useState(false);
   const [showPass2, setShowPass2] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(true);
+  const [savedByEmail, setSavedByEmail] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const loadRememberedLogin = async () => {
@@ -44,8 +50,20 @@ export default function LoginScreen() {
         const parsed = JSON.parse(raw) as Partial<RememberLoginPayload>;
         if (parsed.remember) {
           setRememberLogin(true);
-          setEmail(typeof parsed.email === 'string' ? parsed.email : '');
-          setPass(typeof parsed.password === 'string' ? parsed.password : '');
+          const mapping = parsed.byEmail && typeof parsed.byEmail === 'object' ? parsed.byEmail : {};
+          const safeMap: Record<string, string> = Object.entries(mapping).reduce(
+            (acc, [k, v]) => (typeof v === 'string' && v ? { ...acc, [k.toLowerCase()]: v } : acc),
+            {}
+          );
+          // Migration compat: ancien format {email,password}
+          if (typeof parsed.email === 'string' && typeof parsed.password === 'string' && parsed.email.trim()) {
+            safeMap[parsed.email.trim().toLowerCase()] = parsed.password;
+          }
+          setSavedByEmail(safeMap);
+          const lastEmail = typeof parsed.email === 'string' ? parsed.email : '';
+          setEmail(lastEmail);
+          const lastPass = lastEmail ? safeMap[lastEmail.trim().toLowerCase()] : '';
+          setPass(lastPass ?? '');
         }
       } catch {
         // ignore corrupted local payload
@@ -54,15 +72,17 @@ export default function LoginScreen() {
     loadRememberedLogin();
   }, []);
 
-  useEffect(() => {
-    const persistDraft = async () => {
-      if (createMode) return;
-      if (!rememberLogin) return;
-      const payload: RememberLoginPayload = { email, password: pass, remember: true };
-      await userSetItem(REMEMBER_LOGIN_KEY, JSON.stringify(payload));
-    };
-    persistDraft();
-  }, [email, pass, createMode, rememberLogin]);
+  const handleEmailChange = (nextEmail: string) => {
+    setEmail(nextEmail);
+    if (createMode || !rememberLogin) return;
+    const key = nextEmail.trim().toLowerCase();
+    const rememberedPass = savedByEmail[key];
+    if (rememberedPass) {
+      setPass(rememberedPass);
+    } else {
+      setPass('');
+    }
+  };
 
   const submit = async () => {
     if (busy) return;
@@ -94,7 +114,15 @@ export default function LoginScreen() {
         return;
       }
       if (rememberLogin) {
-        const payload: RememberLoginPayload = { email, password: pass, remember: true };
+        const key = email.trim().toLowerCase();
+        const nextMap = key ? { ...savedByEmail, [key]: pass } : savedByEmail;
+        setSavedByEmail(nextMap);
+        const payload: RememberLoginPayload = {
+          remember: true,
+          email,
+          password: pass,
+          byEmail: nextMap,
+        };
         await userSetItem(REMEMBER_LOGIN_KEY, JSON.stringify(payload));
       } else {
         await userRemoveItem(REMEMBER_LOGIN_KEY);
@@ -156,7 +184,7 @@ export default function LoginScreen() {
             textContentType="emailAddress"
             autoComplete="email"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={handleEmailChange}
             placeholder="ex: vous@email.com"
             placeholderTextColor="#64748b"
             editable={!busy}
@@ -221,9 +249,18 @@ export default function LoginScreen() {
                 const next = !rememberLogin;
                 setRememberLogin(next);
                 if (!next) {
+                  setSavedByEmail({});
                   await userRemoveItem(REMEMBER_LOGIN_KEY);
                 } else {
-                  const payload: RememberLoginPayload = { email, password: pass, remember: true };
+                  const key = email.trim().toLowerCase();
+                  const nextMap = key && pass ? { ...savedByEmail, [key]: pass } : savedByEmail;
+                  setSavedByEmail(nextMap);
+                  const payload: RememberLoginPayload = {
+                    remember: true,
+                    email,
+                    password: pass,
+                    byEmail: nextMap,
+                  };
                   await userSetItem(REMEMBER_LOGIN_KEY, JSON.stringify(payload));
                 }
               }}

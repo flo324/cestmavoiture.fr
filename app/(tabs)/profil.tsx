@@ -2,10 +2,11 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -32,6 +33,7 @@ type VehicleBox = {
 
 const MAX_VISION_EDGE = 1280;
 const GEMINI_VISION_MODEL = 'gemini-1.5-flash';
+type ProfileDraft = { prenom: string; nom: string; alias: string; modele: string; immat: string; km: string };
 
 function extractJsonObject(text: string): string | null {
   const start = text.indexOf('{');
@@ -213,14 +215,92 @@ export default function ProfilScreen() {
   const { vehicleData, setVehicleField, vehicles, activeVehicleId, selectVehicle, addVehicle, deleteVehicle } =
     useVehicle();
 
-  const [tempKm, setTempKm] = useState(kmValue);
+  const buildDraft = (): ProfileDraft => ({
+    prenom: vehicleData.prenom || '',
+    nom: vehicleData.nom || '',
+    alias: vehicleData.alias || '',
+    modele: vehicleData.modele || '',
+    immat: vehicleData.immat || '',
+    km: kmValue || '0',
+  });
+  const [draft, setDraft] = useState<ProfileDraft>(buildDraft());
   const [isPhotoProcessing, setIsPhotoProcessing] = useState(false);
   const [vehiclesModalVisible, setVehiclesModalVisible] = useState(false);
+  const [saveNotice, setSaveNotice] = useState('');
+  const sessionSlide = useState(new Animated.Value(-10))[0];
+  const saveNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Charger le KM au démarrage (les infos véhicule viennent du VehicleContext)
   useEffect(() => {
-    setTempKm(kmValue);
-  }, [kmValue]);
+    setDraft(buildDraft());
+  }, [vehicleData.prenom, vehicleData.nom, vehicleData.alias, vehicleData.modele, vehicleData.immat, kmValue]);
+
+  useEffect(() => {
+    return () => {
+      if (saveNoticeTimerRef.current) clearTimeout(saveNoticeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentLogin) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sessionSlide, {
+          toValue: 10,
+          duration: 2600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(sessionSlide, {
+          toValue: -10,
+          duration: 2600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [currentLogin, sessionSlide]);
+
+  const showSavedNotice = () => {
+    setSaveNotice('Modifications enregistrées');
+    if (saveNoticeTimerRef.current) clearTimeout(saveNoticeTimerRef.current);
+    saveNoticeTimerRef.current = setTimeout(() => setSaveNotice(''), 1800);
+  };
+
+  const saveDraft = async () => {
+    setVehicleField('prenom', draft.prenom);
+    setVehicleField('nom', draft.nom);
+    setVehicleField('alias', draft.alias);
+    setVehicleField('modele', draft.modele);
+    setVehicleField('immat', draft.immat);
+    await updateKm(draft.km);
+    showSavedNotice();
+  };
+
+  const hasPendingChanges = () =>
+    draft.prenom !== (vehicleData.prenom || '') ||
+    draft.nom !== (vehicleData.nom || '') ||
+    draft.alias !== (vehicleData.alias || '') ||
+    draft.modele !== (vehicleData.modele || '') ||
+    draft.immat !== (vehicleData.immat || '') ||
+    draft.km !== (kmValue || '0');
+
+  const confirmSaveIfNeeded = () => {
+    if (!hasPendingChanges()) return;
+    Alert.alert('Enregistrer les modifications ?', 'Voulez-vous enregistrer les changements du profil ?', [
+      {
+        text: 'Non',
+        style: 'cancel',
+        onPress: () => setDraft(buildDraft()),
+      },
+      {
+        text: 'Oui',
+        onPress: () => {
+          void saveDraft();
+        },
+      },
+    ]);
+  };
 
 
   const handlePickVehiclePhoto = async () => {
@@ -290,8 +370,11 @@ export default function ProfilScreen() {
       <View style={[styles.container, compact ? styles.containerCompact : roomy ? styles.containerRoomy : null]}>
         <Text style={styles.pageTitle}>PROFIL</Text>
         {currentLogin ? (
-          <Text style={styles.sessionHint}>Connecté : {currentLogin}</Text>
+          <Animated.View style={{ transform: [{ translateX: sessionSlide }] }}>
+            <Text style={styles.sessionHint}>Connecté : {currentLogin}</Text>
+          </Animated.View>
         ) : null}
+        {saveNotice ? <Text style={styles.saveNotice}>{saveNotice}</Text> : null}
         <View style={[styles.card, compact ? styles.cardCompact : roomy ? styles.cardRoomy : null]}>
           <Text style={styles.sectionTitle}>INFORMATIONS PERSONNELLES</Text>
           <View style={styles.row}>
@@ -299,16 +382,18 @@ export default function ProfilScreen() {
               <Text style={styles.label}>Prénom</Text>
               <TextInput
                 style={styles.input}
-                value={vehicleData.prenom}
-                onChangeText={(t) => setVehicleField('prenom', t)}
+                value={draft.prenom}
+                onChangeText={(t) => setDraft((prev) => ({ ...prev, prenom: t }))}
+                onBlur={confirmSaveIfNeeded}
               />
             </View>
             <View style={styles.col}>
               <Text style={styles.label}>Nom</Text>
               <TextInput
                 style={styles.input}
-                value={vehicleData.nom}
-                onChangeText={(t) => setVehicleField('nom', t)}
+                value={draft.nom}
+                onChangeText={(t) => setDraft((prev) => ({ ...prev, nom: t }))}
+                onBlur={confirmSaveIfNeeded}
               />
             </View>
           </View>
@@ -325,8 +410,9 @@ export default function ProfilScreen() {
               <Text style={styles.label}>Nom du véhicule</Text>
               <TextInput
                 style={styles.input}
-                value={vehicleData.alias}
-                onChangeText={(t) => setVehicleField('alias', t)}
+                value={draft.alias}
+                onChangeText={(t) => setDraft((prev) => ({ ...prev, alias: t }))}
+                onBlur={confirmSaveIfNeeded}
                 placeholder="Ex: 307"
                 placeholderTextColor="#6b7b90"
               />
@@ -335,8 +421,9 @@ export default function ProfilScreen() {
               <Text style={styles.label}>Modèle du véhicule</Text>
               <TextInput
                 style={styles.input}
-                value={vehicleData.modele}
-                onChangeText={(t) => setVehicleField('modele', t)}
+                value={draft.modele}
+                onChangeText={(t) => setDraft((prev) => ({ ...prev, modele: t }))}
+                onBlur={confirmSaveIfNeeded}
                 placeholder="Ex: Peugeot 307"
                 placeholderTextColor="#6b7b90"
               />
@@ -348,19 +435,18 @@ export default function ProfilScreen() {
               <Text style={styles.label}>Immatriculation</Text>
               <TextInput
                 style={styles.input}
-                value={vehicleData.immat}
-                onChangeText={(t) => setVehicleField('immat', t)}
+                value={draft.immat}
+                onChangeText={(t) => setDraft((prev) => ({ ...prev, immat: t }))}
+                onBlur={confirmSaveIfNeeded}
               />
             </View>
             <View style={styles.col}>
               <Text style={styles.label}>Kilométrage actuel</Text>
               <TextInput
                 style={styles.input}
-                value={tempKm}
-                onChangeText={(t) => {
-                  setTempKm(t);
-                  updateKm(t);
-                }}
+                value={draft.km}
+                onChangeText={(t) => setDraft((prev) => ({ ...prev, km: t }))}
+                onBlur={confirmSaveIfNeeded}
                 keyboardType="numeric"
               />
             </View>
@@ -383,7 +469,6 @@ export default function ProfilScreen() {
               <Text style={styles.photoPlaceholderText}>Choisir / modifier la photo</Text>
             )}
           </TouchableOpacity>
-
           <TouchableOpacity style={[styles.switchAccountBtn, compact ? styles.btnCompact : null]} onPress={() => setVehiclesModalVisible(true)} activeOpacity={0.85}>
             <Text style={styles.switchAccountBtnText}>CHANGER DE VÉHICULE</Text>
           </TouchableOpacity>
@@ -495,6 +580,20 @@ const styles = StyleSheet.create({
     color: '#64748b',
     textAlign: 'center',
     marginBottom: 12,
+  },
+  saveNotice: {
+    alignSelf: 'center',
+    marginBottom: 10,
+    backgroundColor: 'rgba(16,185,129,0.18)',
+    borderColor: 'rgba(16,185,129,0.55)',
+    borderWidth: 1,
+    color: '#a7f3d0',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   card: {
     flex: 1,

@@ -150,7 +150,15 @@ export default function FacturesScreen() {
             <View style={styles.cropView}>
               <Image source={{ uri: capturedImage?.uri }} style={styles.preview} resizeMode="cover" />
               <View style={styles.cropFrame} />
-              <TouchableOpacity style={styles.btnValidate} onPress={analyserFactureAvecIA}>
+              <TouchableOpacity
+                style={styles.btnValidate}
+                onPress={() =>
+                  Alert.alert('Confirmer l’enregistrement', 'Voulez-vous analyser et enregistrer cette facture ?', [
+                    { text: 'Annuler', style: 'cancel' },
+                    { text: 'Enregistrer', onPress: () => void analyserFactureAvecIA() },
+                  ])
+                }
+              >
                 <Text style={{ color: '#fff', fontWeight: 'bold' }}>VALIDER ET ANALYSER</Text>
               </TouchableOpacity>
             </View>

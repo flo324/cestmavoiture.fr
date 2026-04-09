@@ -234,7 +234,7 @@ export default function ScanCG() {
       if (!createdAt) setCreatedAt(formatNow());
       setUpdatedAt(formatNow());
       setHasSavedDossier(true);
-      Alert.alert('Dossier créé', 'Votre carte grise a bien été enregistrée.', [
+      Alert.alert('Enregistré', 'Votre dossier carte grise a bien été enregistré.', [
         { text: 'OK', onPress: goDocs },
       ]);
     } catch (error) {
@@ -380,7 +380,16 @@ export default function ScanCG() {
             <TextInput style={styles.input} value={puissanceFiscale} onChangeText={setPuissanceFiscale} placeholder="Optionnel" />
             <Text style={styles.label}>Modèle du véhicule</Text>
             <TextInput style={styles.input} value={modeleVehicule} onChangeText={setModeleVehicule} placeholder="Optionnel" />
-            <TouchableOpacity style={styles.saveBtn} onPress={() => setCreateStep(3)} activeOpacity={0.9}>
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={() =>
+                Alert.alert('Valider les informations ?', 'Voulez-vous enregistrer ces informations avant de continuer ?', [
+                  { text: 'Annuler', style: 'cancel' },
+                  { text: 'Enregistrer', onPress: () => setCreateStep(3) },
+                ])
+              }
+              activeOpacity={0.9}
+            >
               <Text style={styles.saveBtnText}>VALIDER LES INFORMATIONS</Text>
             </TouchableOpacity>
           </View>
@@ -418,7 +427,16 @@ export default function ScanCG() {
         ) : null}
 
         {flow === 'create' && createStep === 3 ? (
-          <TouchableOpacity style={styles.saveBtn} onPress={saveNow} activeOpacity={0.9}>
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={() =>
+              Alert.alert('Confirmer l’enregistrement', 'Voulez-vous créer et enregistrer ce dossier carte grise ?', [
+                { text: 'Annuler', style: 'cancel' },
+                { text: 'Enregistrer', onPress: () => void saveNow() },
+              ])
+            }
+            activeOpacity={0.9}
+          >
             <MaterialCommunityIcons name="content-save-outline" size={20} color="#00F2FF" />
             <Text style={styles.saveBtnText}>VALIDER ET CRÉER LE DOSSIER</Text>
           </TouchableOpacity>
