@@ -4,6 +4,7 @@ import { LogBox } from 'react-native';
 
 import { AuthProvider } from '../context/AuthContext';
 import { ScanProvider } from '../context/ScanContext';
+import { ThemeProvider } from '../context/ThemeContext';
 
 if (__DEV__) {
   LogBox.ignoreLogs([
@@ -14,15 +15,17 @@ if (__DEV__) {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <ScanProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: '#0b0f14' },
-          }}
-        />
-      </ScanProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <ScanProvider>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: '#0b0f14' },
+            }}
+          />
+        </ScanProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { BarChart3, ClipboardList, FileText, PenTool, Settings } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
@@ -10,6 +11,7 @@ import Svg, { Defs, Ellipse, RadialGradient, Rect, Stop } from 'react-native-svg
 import { GarageConnectLogo } from '../../components/GarageConnectLogo';
 import { UI_THEME } from '../../constants/uiTheme';
 import { useKilometrage } from '../../context/KilometrageContext';
+import { useTheme } from '../../context/ThemeContext';
 import { useVehicle } from '../../context/VehicleContext';
 import { userGetItem } from '../../services/userStorage';
 
@@ -76,6 +78,7 @@ function ctUrgencyColor(daysLeft: number): string {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { theme, isLight } = useTheme();
   const { vehicleData } = useVehicle();
   const kmCtx = useKilometrage();
   const { height: screenH } = useWindowDimensions();
@@ -91,11 +94,17 @@ export default function HomeScreen() {
   const [docPreview, setDocPreview] = useState({ permis: '', cg: '' });
   const [docModal, setDocModal] = useState<null | 'permis' | 'cg'>(null);
   const compact = screenH < 820;
+  const ANIM_TIMING = {
+    pulse: 620,
+    premiumPulse: 680,
+    intro: 420,
+  } as const;
   const marqueeAnim = useRef(new Animated.Value(0)).current;
   const alertPulse = useRef(new Animated.Value(1)).current;
   const onlineBlink = useRef(new Animated.Value(1)).current;
   const premiumPulse = useRef(new Animated.Value(1)).current;
   const brandRollAnim = useRef(new Animated.Value(0)).current;
+  const screenIntro = useRef(new Animated.Value(0)).current;
 
   const kmStats = useMemo(() => {
     const total = parseOdometerKm(kmCtx?.km);
@@ -216,17 +225,27 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
+    screenIntro.setValue(0);
+    Animated.timing(screenIntro, {
+      toValue: 1,
+      duration: ANIM_TIMING.intro,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [screenIntro]);
+
+  useEffect(() => {
     const pulseLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(alertPulse, {
           toValue: 1.18,
-          duration: 640,
+          duration: ANIM_TIMING.pulse,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(alertPulse, {
           toValue: 1,
-          duration: 640,
+          duration: ANIM_TIMING.pulse,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -241,13 +260,13 @@ export default function HomeScreen() {
       Animated.sequence([
         Animated.timing(premiumPulse, {
           toValue: 1.08,
-          duration: 700,
+          duration: ANIM_TIMING.premiumPulse,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(premiumPulse, {
           toValue: 1,
-          duration: 700,
+          duration: ANIM_TIMING.premiumPulse,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -349,20 +368,49 @@ export default function HomeScreen() {
     inputRange: [0, 1],
     outputRange: [0, -26],
   });
+  const introTranslateY = screenIntro.interpolate({
+    inputRange: [0, 1],
+    outputRange: [8, 0],
+  });
+
+  const notificationItems = useMemo(() => {
+    const items: string[] = [];
+    if (ctBanner.daysLeft == null) {
+      items.push('Date du prochain CT non renseignée.');
+    } else if (ctBanner.daysLeft < 0) {
+      items.push(`CT expiré depuis ${Math.abs(ctBanner.daysLeft)} jour(s).`);
+    } else if (ctBanner.daysLeft < 30) {
+      items.push(`CT à faire dans ${ctBanner.daysLeft} jour(s).`);
+    }
+    if (entretienKpi.filledModules < 3) {
+      items.push(`Entretien incomplet: ${entretienKpi.filledModules}/3 modules actifs.`);
+    }
+    if (!docPreview.permis) items.push('Permis non scanné.');
+    if (!docPreview.cg) items.push('Carte grise non scannée.');
+    return items;
+  }, [ctBanner.daysLeft, entretienKpi.filledModules, docPreview.permis, docPreview.cg]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <LinearGradient
         pointerEvents="none"
-        colors={['transparent', 'rgba(8, 14, 22, 0.35)', 'rgba(4, 8, 14, 0.72)']}
+        colors={
+          isLight
+            ? ['rgba(255,255,255,0)', 'rgba(186,230,253,0.24)', 'rgba(226,232,240,0.55)']
+            : ['transparent', 'rgba(8, 14, 22, 0.35)', 'rgba(4, 8, 14, 0.72)']
+        }
         locations={[0, 0.55, 1]}
         style={styles.bottomAtmosphere}
       />
-      <View
+      <Animated.View
         style={[
           styles.content,
           compact ? styles.contentCompact : null,
-          { paddingTop: Math.max(insets.top + 8, compact ? 24 : 30) },
+          {
+            paddingTop: Math.max(insets.top + 8, compact ? 24 : 30),
+            opacity: screenIntro,
+            transform: [{ translateY: introTranslateY }],
+          },
         ]}
       >
         {/* Header Section */}
@@ -372,34 +420,61 @@ export default function HomeScreen() {
             <View style={styles.brandRollViewport}>
               <Animated.View style={[styles.brandRollTrack, { transform: [{ translateY: brandRollTranslateY }] }]}>
                 <View style={styles.headerBrandTextCol}>
-                  <Text style={styles.headerBrandTop}>GARAGE</Text>
-                  <Text style={styles.headerBrandBottom}>CONNECT</Text>
+              <Text style={[styles.headerBrandTop, isLight ? { color: '#475569' } : null]}>GARAGE</Text>
+              <Text style={[styles.headerBrandBottom, isLight ? { color: '#0f172a' } : null]}>CONNECT</Text>
                 </View>
                 <View style={styles.headerBrandTextCol}>
-                  <Text style={styles.headerBrandTop}>GARAGE</Text>
-                  <Text style={styles.headerBrandBottom}>CONNECT</Text>
+              <Text style={[styles.headerBrandTop, isLight ? { color: '#475569' } : null]}>GARAGE</Text>
+              <Text style={[styles.headerBrandBottom, isLight ? { color: '#0f172a' } : null]}>CONNECT</Text>
                 </View>
               </Animated.View>
             </View>
           </View>
           <View style={styles.headerRight}>
-            <Animated.View style={[styles.onlinePill, { opacity: onlineBlink }]}>
+            <Animated.View
+              style={[
+                styles.onlinePill,
+                isLight ? { backgroundColor: 'rgba(220,252,231,0.85)', borderColor: 'rgba(22,163,74,0.5)' } : null,
+                { opacity: onlineBlink },
+              ]}
+            >
               <View style={styles.onlineDot} />
-              <Text style={styles.onlineText}>EN LIGNE</Text>
+              <Text style={[styles.onlineText, isLight ? { color: '#166534' } : null]}>EN LIGNE</Text>
             </Animated.View>
             <Pressable
-              style={({ pressed }) => [styles.notificationBtn, pressed && styles.notificationBtnPressed]}
-              onPress={() => Alert.alert('Notifications', "Vous n'avez pas de nouvelles notifications.")}
+              style={({ pressed }) => [
+                styles.notificationBtn,
+                isLight ? styles.notificationBtnLight : null,
+                pressed && styles.notificationBtnPressed,
+              ]}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                if (notificationItems.length === 0) {
+                  Alert.alert('Notifications', "Vous n'avez pas de nouvelles notifications.");
+                  return;
+                }
+                Alert.alert(
+                  `Notifications (${notificationItems.length})`,
+                  notificationItems.map((item, idx) => `${idx + 1}. ${item}`).join('\n')
+                );
+              }}
             >
-              <MaterialCommunityIcons name="bell-outline" size={18} color="#7dd3fc" />
+              <MaterialCommunityIcons name="bell-outline" size={18} color="#ffffff" />
+              {notificationItems.length > 0 ? (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {notificationItems.length > 99 ? '99+' : String(notificationItems.length)}
+                  </Text>
+                </View>
+              ) : null}
             </Pressable>
           </View>
         </View>
 
         {/* Vehicle Card Section */}
         <LinearGradient
-          colors={['#1A202C', '#111111']}
-          style={[styles.vehicleCard, compact ? styles.vehicleCardCompact : null]}
+          colors={isLight ? ['#ffffff', '#eef3fb'] : ['#1A202C', '#111111']}
+          style={[styles.vehicleCard, isLight ? styles.vehicleCardLight : null, compact ? styles.vehicleCardCompact : null]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
@@ -410,17 +485,20 @@ export default function HomeScreen() {
             style={styles.vehicleTopBeam}
           />
           <View style={styles.vehicleCardTextContainer}>
-            <Text style={styles.vehicleCardName}>{vehicleData.alias || vehicleData.modele || '-'}</Text>
-            <Text style={styles.vehicleCardModel}>{vehicleData.modele || '-'}</Text>
-            <View style={styles.immatBadge}>
-              <Text style={styles.immatBadgeLabel}>IMMAT</Text>
-              <Text style={styles.immatBadgeValue}>{vehicleData.immat || '-'}</Text>
+            <Text style={[styles.vehicleCardName, isLight ? { color: '#0f172a' } : null]}>
+              {vehicleData.alias || vehicleData.modele || '-'}
+            </Text>
+            <Text style={[styles.vehicleCardModel, isLight ? { color: '#334155' } : null]}>{vehicleData.modele || '-'}</Text>
+            <View style={[styles.immatBadge, isLight ? styles.immatBadgeLight : null]}>
+              <Text style={[styles.immatBadgeLabel, isLight ? styles.immatBadgeLabelLight : null]}>IMMAT</Text>
+              <Text style={[styles.immatBadgeValue, isLight ? styles.immatBadgeValueLight : null]}>{vehicleData.immat || '-'}</Text>
             </View>
             <View style={styles.docQuickRow}>
               <Pressable
-                style={({ pressed }) => [styles.docQuickBtn, pressed ? styles.docQuickBtnPressed : null]}
+                style={({ pressed }) => [styles.docQuickBtn, isLight ? styles.docQuickBtnLight : null, pressed ? styles.docQuickBtnPressed : null]}
                 onPress={() => {
                   if (!docPreview.permis) return;
+                  void Haptics.selectionAsync();
                   setDocModal('permis');
                 }}
               >
@@ -432,14 +510,23 @@ export default function HomeScreen() {
                       size={16}
                       color={docPreview.permis ? '#7dd3fc' : '#64748b'}
                     />
-                    <Text style={[styles.docQuickText, !docPreview.permis && styles.docQuickTextDisabled]}>Permis</Text>
+                    <Text
+                      style={[
+                        styles.docQuickText,
+                        isLight ? styles.docQuickTextLight : null,
+                        !docPreview.permis && styles.docQuickTextDisabled,
+                      ]}
+                    >
+                      Permis
+                    </Text>
                   </>
                 )}
               </Pressable>
               <Pressable
-                style={({ pressed }) => [styles.docQuickBtn, pressed ? styles.docQuickBtnPressed : null]}
+                style={({ pressed }) => [styles.docQuickBtn, isLight ? styles.docQuickBtnLight : null, pressed ? styles.docQuickBtnPressed : null]}
                 onPress={() => {
                   if (!docPreview.cg) return;
+                  void Haptics.selectionAsync();
                   setDocModal('cg');
                 }}
               >
@@ -451,12 +538,20 @@ export default function HomeScreen() {
                       size={16}
                       color={docPreview.cg ? '#f7e8b8' : '#64748b'}
                     />
-                    <Text style={[styles.docQuickText, !docPreview.cg && styles.docQuickTextDisabled]}>Carte grise</Text>
+                    <Text
+                      style={[
+                        styles.docQuickText,
+                        isLight ? styles.docQuickTextLight : null,
+                        !docPreview.cg && styles.docQuickTextDisabled,
+                      ]}
+                    >
+                      Carte grise
+                    </Text>
                   </>
                 )}
               </Pressable>
             </View>
-            <Text style={styles.vehicleCardKm}>{formatKmFr(kmStats.total)} KM</Text>
+            <Text style={[styles.vehicleCardKm, isLight ? { color: '#475569' } : null]}>{formatKmFr(kmStats.total)} KM</Text>
           </View>
           <LinearGradient
             colors={['#f7e8b8', '#9a7428', '#d4af37', '#f7e8b8']}
@@ -506,7 +601,11 @@ export default function HomeScreen() {
             colors={tickerTone.gradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.tickerCard, { borderColor: tickerTone.border }]}
+            style={[
+              styles.tickerCard,
+              isLight ? styles.tickerCardLight : null,
+              { borderColor: tickerTone.border },
+            ]}
           >
             <View style={styles.tickerHeaderRow}>
               <Animated.View
@@ -516,20 +615,23 @@ export default function HomeScreen() {
                 ]}
               />
               <MaterialCommunityIcons name="star-four-points" size={13} color="#fbbf24" style={styles.tickerSparkIcon} />
-              <Text style={[styles.tickerHeader, { color: tickerTone.text }]}>{tickerTone.label}</Text>
+              <Text style={[styles.tickerHeader, { color: isLight ? '#0f172a' : tickerTone.text }]}>{tickerTone.label}</Text>
               <Pressable
-                onPress={() => router.push('/premium')}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push('/premium');
+                }}
                 style={({ pressed }) => [styles.tickerCtaWrap, pressed ? styles.tickerCtaPressed : null]}
               >
                 <Animated.View style={[styles.tickerCtaPill, { transform: [{ scale: premiumPulse }] }]}>
-                  <Text style={styles.tickerCtaText}>S'ABONNER</Text>
+                  <Text style={[styles.tickerCtaText, isLight ? styles.tickerCtaTextLight : null]}>S'ABONNER</Text>
                 </Animated.View>
               </Pressable>
             </View>
             <View style={styles.tickerViewport}>
               <Animated.View style={[styles.tickerTrack, { transform: [{ translateX: marqueeTranslateX }] }]}>
-                <Text style={[styles.tickerText, { color: tickerTone.text }]}>{dashboardTickerText}</Text>
-                <Text style={[styles.tickerText, { color: tickerTone.text }]}>   {dashboardTickerText}</Text>
+                <Text style={[styles.tickerText, { color: isLight ? '#0f172a' : tickerTone.text }]}>{dashboardTickerText}</Text>
+                <Text style={[styles.tickerText, { color: isLight ? '#0f172a' : tickerTone.text }]}>   {dashboardTickerText}</Text>
               </Animated.View>
             </View>
           </LinearGradient>
@@ -539,16 +641,30 @@ export default function HomeScreen() {
         <View style={[styles.gridContainer, compact ? styles.gridContainerCompact : null]}>
           {categories.map((category, index) => {
             const Icon = category.icon;
-            const borderColor = category.id === 6 ? '#00F2FF' : index % 2 === 0 ? '#D4AF37' : '#00F2FF';
+            const borderColor = isLight
+              ? category.id === 6
+                ? '#38bdf8'
+                : index % 2 === 0
+                  ? '#caa54a'
+                  : '#60a5fa'
+              : category.id === 6
+                ? '#00F2FF'
+                : index % 2 === 0
+                  ? '#D4AF37'
+                  : '#00F2FF';
             return (
               <Pressable
                 key={category.id}
                 style={({ pressed }) => [
                   styles.gridItem,
                   compact ? styles.gridItemCompact : null,
+                  isLight ? styles.gridItemLight : null,
                   { borderColor },
                   pressed ? styles.cardPressedStrong : null,
                 ]}
+                onPressIn={() => {
+                  void Haptics.selectionAsync();
+                }}
                 onPress={() => handleCategoryPress(category.id)}
               >
                 {({ pressed }) => (
@@ -556,49 +672,65 @@ export default function HomeScreen() {
                     {pressed ? <View pointerEvents="none" style={styles.gridPressFlash} /> : null}
                     {category.id === 6 ? (
                       <>
-                        <View style={[styles.iconContainer, { borderColor }]}>
+                        <View style={[styles.iconContainer, isLight ? styles.iconContainerLight : null, { borderColor }]}>
                           <Icon size={24} color={borderColor} />
                         </View>
-                        <Text style={styles.categoryTitle}>{category.title}</Text>
-                        <Text style={styles.categoryDescription}>{category.description}</Text>
+                        <Text style={[styles.categoryTitle, isLight ? styles.categoryTitleLight : null]}>{category.title}</Text>
+                        <Text style={[styles.categoryDescription, isLight ? styles.categoryDescriptionLight : null]}>
+                          {category.description}
+                        </Text>
                         <View
                           style={[
                             styles.kmStatusBadge,
+                            isLight ? styles.kmStatusBadgeLight : null,
                             kmCtx?.isDriving
                               ? styles.kmStatusDriving
                               : kmCtx?.isTracking
                                 ? styles.kmStatusTracking
                                 : styles.kmStatusStopped,
+                            isLight
+                              ? kmCtx?.isDriving
+                                ? styles.kmStatusDrivingLight
+                                : kmCtx?.isTracking
+                                  ? styles.kmStatusTrackingLight
+                                  : styles.kmStatusStoppedLight
+                              : null,
                           ]}
                         >
-                          <Text style={styles.kmStatusText}>
+                          <Text style={[styles.kmStatusText, isLight ? styles.kmStatusTextLight : null]}>
                             {kmCtx?.isDriving ? 'EN VOITURE' : kmCtx?.isTracking ? 'GPS ACTIF' : 'A L\'ARRET'}
                           </Text>
                         </View>
                       </>
                     ) : category.id === 5 ? (
                       <>
-                        <View style={[styles.iconContainer, { borderColor }]}>
+                        <View style={[styles.iconContainer, isLight ? styles.iconContainerLight : null, { borderColor }]}>
                           <Icon size={24} color={borderColor} />
                         </View>
-                        <Text style={styles.categoryTitle}>{category.title}</Text>
-                        <Text style={styles.categoryDescription}>{category.description}</Text>
+                        <Text style={[styles.categoryTitle, isLight ? styles.categoryTitleLight : null]}>{category.title}</Text>
+                        <Text style={[styles.categoryDescription, isLight ? styles.categoryDescriptionLight : null]}>
+                          {category.description}
+                        </Text>
                       </>
                     ) : category.id === 1 ? (
                       <>
-                        <View style={[styles.iconContainer, { borderColor }]}>
+                        <View style={[styles.iconContainer, isLight ? styles.iconContainerLight : null, { borderColor }]}>
                           <Icon size={24} color={borderColor} />
                         </View>
-                        <Text style={styles.categoryTitle}>{category.title}</Text>
-                        <Text style={styles.categoryDescription}>{category.description}</Text>
+                        <Text style={[styles.categoryTitle, isLight ? styles.categoryTitleLight : null]}>{category.title}</Text>
+                        <Text style={[styles.categoryDescription, isLight ? styles.categoryDescriptionLight : null]}>
+                          {category.description}
+                        </Text>
                       </>
                     ) : (
                       <>
-                        <View style={[styles.iconContainer, { borderColor }]}>
+                        <View style={[styles.iconContainer, isLight ? styles.iconContainerLight : null, { borderColor }]}>
                           <Icon size={24} color={borderColor} />
                         </View>
-                        <Text style={styles.categoryTitle}>{category.title}</Text>
-                        <Text style={styles.categoryDescription}>{category.description}</Text>
+                        <Text style={[styles.categoryTitle, isLight ? styles.categoryTitleLight : null]}>{category.title}</Text>
+                        <Text style={[styles.categoryDescription, isLight ? styles.categoryDescriptionLight : null]}>
+                          {category.description}
+                        </Text>
                       </>
                     )}
                   </>
@@ -607,7 +739,7 @@ export default function HomeScreen() {
             );
           })}
         </View>
-      </View>
+      </Animated.View>
       <Modal visible={docModal != null} transparent animationType="fade" onRequestClose={() => setDocModal(null)}>
         <View style={styles.docModalBg}>
           <TouchableOpacity style={styles.docModalClose} onPress={() => setDocModal(null)}>
@@ -691,12 +823,41 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#111827',
+    backgroundColor: '#dc2626',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: UI_THEME.cyan,
+    borderColor: 'rgba(255,255,255,0.4)',
     marginTop: 6,
+  },
+  notificationBtnLight: {
+    backgroundColor: '#dc2626',
+    borderColor: 'rgba(255,255,255,0.45)',
+    shadowColor: '#f87171',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -7,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 999,
+    paddingHorizontal: 4,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationBadgeText: {
+    color: '#b91c1c',
+    fontSize: 9,
+    fontWeight: '900',
+    lineHeight: 11,
   },
   notificationBtnPressed: {
     transform: [{ scale: 0.95 }],
@@ -743,6 +904,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     overflow: 'hidden',
+  },
+  vehicleCardLight: {
+    borderColor: 'rgba(179,135,40,0.35)',
+    shadowColor: '#93c5fd',
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
   },
   vehicleTopBeam: {
     position: 'absolute',
@@ -798,6 +967,10 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
+  docQuickBtnLight: {
+    borderColor: 'rgba(2,132,199,0.35)',
+    backgroundColor: 'rgba(240,249,255,0.95)',
+  },
   docQuickBtnPressed: {
     transform: [{ scale: 0.96 }],
   },
@@ -811,6 +984,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.2,
+  },
+  docQuickTextLight: {
+    color: '#0f172a',
   },
   docQuickTextDisabled: {
     color: '#64748b',
@@ -828,17 +1004,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.55)',
   },
+  immatBadgeLight: {
+    backgroundColor: 'rgba(248,250,252,0.95)',
+    borderColor: 'rgba(2,132,199,0.3)',
+  },
   immatBadgeLabel: {
     color: '#9fb0c3',
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.1,
   },
+  immatBadgeLabelLight: {
+    color: '#64748b',
+  },
   immatBadgeValue: {
     color: '#f7e8b8',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.8,
+  },
+  immatBadgeValueLight: {
+    color: '#0f172a',
   },
   vehicleCardKm: {
     color: '#b8c9d8',
@@ -962,6 +1148,12 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
+  tickerCardLight: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderColor: 'rgba(2,132,199,0.25)',
+    shadowColor: '#60a5fa',
+    shadowOpacity: 0.2,
+  },
   tickerHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -999,6 +1191,9 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '900',
     letterSpacing: 0.45,
+  },
+  tickerCtaTextLight: {
+    color: '#075985',
   },
   tickerCtaPressed: {
     transform: [{ scale: 0.96 }],
@@ -1044,6 +1239,15 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
+  gridItemLight: {
+    backgroundColor: '#ffffff',
+    borderColor: 'rgba(148,163,184,0.35)',
+    shadowColor: '#93c5fd',
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
   gridItemCompact: {
     paddingHorizontal: 9,
     paddingVertical: 7,
@@ -1075,6 +1279,9 @@ const styles = StyleSheet.create({
     marginBottom: 9,
     borderWidth: 1,
   },
+  iconContainerLight: {
+    backgroundColor: '#f8fbff',
+  },
   categoryTitle: {
     color: UI_THEME.textPrimary,
     fontSize: 10.5,
@@ -1082,10 +1289,16 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     marginBottom: 4,
   },
+  categoryTitleLight: {
+    color: '#0f172a',
+  },
   categoryDescription: {
     color: '#AAAAAA',
     fontSize: 8.5,
     textAlign: 'left',
+  },
+  categoryDescriptionLight: {
+    color: '#64748b',
   },
   ctBanner: {
     marginTop: 8,
@@ -1107,23 +1320,41 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderWidth: 1,
   },
+  kmStatusBadgeLight: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
   kmStatusDriving: {
     backgroundColor: 'rgba(46,204,113,0.15)',
     borderColor: '#2ecc71',
+  },
+  kmStatusDrivingLight: {
+    backgroundColor: 'rgba(220,252,231,0.95)',
+    borderColor: 'rgba(22,163,74,0.45)',
   },
   kmStatusTracking: {
     backgroundColor: 'rgba(0,242,255,0.14)',
     borderColor: '#00F2FF',
   },
+  kmStatusTrackingLight: {
+    backgroundColor: 'rgba(224,242,254,0.95)',
+    borderColor: 'rgba(2,132,199,0.45)',
+  },
   kmStatusStopped: {
     backgroundColor: 'rgba(142,142,142,0.14)',
     borderColor: '#8e8e8e',
+  },
+  kmStatusStoppedLight: {
+    backgroundColor: 'rgba(241,245,249,0.95)',
+    borderColor: 'rgba(100,116,139,0.38)',
   },
   kmStatusText: {
     color: '#e8f7ff',
     fontSize: 8,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  kmStatusTextLight: {
+    color: '#0f172a',
   },
   maintenanceStatusBadge: {
     alignSelf: 'flex-start',

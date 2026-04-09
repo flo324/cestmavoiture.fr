@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GarageConnectLogo } from '../components/GarageConnectLogo';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { userGetItem, userRemoveItem, userSetItem } from '../services/userStorage';
 
 const REMEMBER_LOGIN_KEY = '@garage_connect_remember_login_v1';
@@ -31,6 +32,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { register, login, resetPassword } = useAuth();
+  const { isLight } = useTheme();
 
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
@@ -154,7 +156,7 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.root}
+      style={[styles.root, isLight ? styles.rootLight : null]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
@@ -167,17 +169,17 @@ export default function LoginScreen() {
         keyboardDismissMode="on-drag"
       >
         <GarageConnectLogo size="hero" />
-        <Text style={styles.brandLine}>GARAGE CONNECT</Text>
-        <Text style={styles.sub}>
+        <Text style={[styles.brandLine, isLight ? styles.brandLineLight : null]}>GARAGE CONNECT</Text>
+        <Text style={[styles.sub, isLight ? styles.subLight : null]}>
           {createMode
             ? 'Créez votre compte avec votre email et confirmez-le dans votre boîte mail.'
             : 'Connectez-vous avec votre email pour accéder à votre garage.'}
         </Text>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>Email</Text>
+        <View style={[styles.card, isLight ? styles.cardLight : null]}>
+          <Text style={[styles.label, isLight ? styles.labelLight : null]}>Email</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, isLight ? styles.inputLight : null]}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
@@ -189,8 +191,8 @@ export default function LoginScreen() {
             placeholderTextColor="#64748b"
             editable={!busy}
           />
-          <Text style={styles.label}>Mot de passe</Text>
-          <View style={styles.passwordWrap}>
+          <Text style={[styles.label, isLight ? styles.labelLight : null]}>Mot de passe</Text>
+          <View style={[styles.passwordWrap, isLight ? styles.passwordWrapLight : null]}>
             <TextInput
               style={styles.passwordInput}
               secureTextEntry={!showPass}
@@ -215,8 +217,8 @@ export default function LoginScreen() {
           </View>
           {createMode ? (
             <>
-              <Text style={styles.label}>Confirmer le mot de passe</Text>
-              <View style={styles.passwordWrap}>
+              <Text style={[styles.label, isLight ? styles.labelLight : null]}>Confirmer le mot de passe</Text>
+              <View style={[styles.passwordWrap, isLight ? styles.passwordWrapLight : null]}>
                 <TextInput
                   style={styles.passwordInput}
                   secureTextEntry={!showPass2}
@@ -271,7 +273,9 @@ export default function LoginScreen() {
                 size={20}
                 color={rememberLogin ? '#00E9F5' : '#64748b'}
               />
-              <Text style={styles.rememberText}>Se souvenir de mon identifiant et mot de passe</Text>
+              <Text style={[styles.rememberText, isLight ? styles.rememberTextLight : null]}>
+                Se souvenir de mon identifiant et mot de passe
+              </Text>
             </TouchableOpacity>
           ) : null}
 
@@ -315,6 +319,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0b0f14' },
+  rootLight: { backgroundColor: '#f5f8fc' },
   scroll: { alignItems: 'center', paddingHorizontal: 22 },
   brandLine: {
     marginTop: 18,
@@ -323,6 +328,9 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
     color: '#94a3b8',
   },
+  brandLineLight: {
+    color: '#475569',
+  },
   sub: {
     marginTop: 10,
     fontSize: 13,
@@ -330,6 +338,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     maxWidth: 320,
+  },
+  subLight: {
+    color: '#64748b',
   },
   card: {
     marginTop: 28,
@@ -341,7 +352,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1f2937',
   },
+  cardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#d8e4f2',
+  },
   label: { fontSize: 11, fontWeight: '700', color: '#94a3b8', marginBottom: 6, marginTop: 8 },
+  labelLight: { color: '#475569' },
   input: {
     backgroundColor: '#0f172a',
     borderWidth: 1,
@@ -351,6 +367,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: '#e2e8f0',
     fontSize: 15,
+  },
+  inputLight: {
+    backgroundColor: '#f8fbff',
+    borderColor: '#c7d7ea',
+    color: '#0f172a',
   },
   passwordWrap: {
     backgroundColor: '#0f172a',
@@ -362,6 +383,10 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  passwordWrapLight: {
+    backgroundColor: '#f8fbff',
+    borderColor: '#c7d7ea',
   },
   passwordInput: {
     flex: 1,
@@ -385,6 +410,9 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 12,
     fontWeight: '600',
+  },
+  rememberTextLight: {
+    color: '#475569',
   },
   btn: {
     marginTop: 22,

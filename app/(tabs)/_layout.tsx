@@ -1,5 +1,6 @@
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import { Tabs } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Camera, LayoutDashboard, User } from 'lucide-react-native';
@@ -8,6 +9,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KilometrageProvider } from '../../context/KilometrageContext';
+import { useTheme } from '../../context/ThemeContext';
 import { VehicleProvider } from '../../context/VehicleContext';
 
 const TAB_BAR_BODY = 52;
@@ -28,14 +30,19 @@ const ROUTE_ORDER = ['index', 'scan', 'profil'] as const;
 
 function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { isLight } = useTheme();
 
   return (
     <View style={styles.tabBarRoot} pointerEvents="box-none">
       <BlurView
         intensity={48}
-        tint="dark"
+        tint={isLight ? 'light' : 'dark'}
         style={[
           styles.tabBarInnerGlass,
+          {
+            backgroundColor: isLight ? 'rgba(240,247,255,0.86)' : 'rgba(5,9,14,0.72)',
+            borderColor: isLight ? 'rgba(2,132,199,0.2)' : 'rgba(0, 232, 245, 0.16)',
+          },
           {
             minHeight: TAB_BAR_BODY,
             paddingBottom: Math.max(insets.bottom, 8),
@@ -43,12 +50,16 @@ function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
         ]}
       >
         <LinearGradient
-          colors={['rgba(14,25,36,0.95)', 'rgba(8,16,24,0.92)', 'rgba(4,7,11,0.96)']}
+          colors={
+            isLight
+              ? ['rgba(245,249,255,0.96)', 'rgba(234,242,252,0.94)', 'rgba(224,235,248,0.96)']
+              : ['rgba(14,25,36,0.95)', 'rgba(8,16,24,0.92)', 'rgba(4,7,11,0.96)']
+          }
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={styles.notchCutout} pointerEvents="none" />
+        <View style={[styles.notchCutout, isLight ? { backgroundColor: '#f5f8fc' } : null]} pointerEvents="none" />
         <Svg
           width="100%"
           height={40}
@@ -59,13 +70,13 @@ function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
         >
           <Path
             d="M0 50 L390 50 C430 50 442 18 500 18 C558 18 570 50 610 50 L1000 50"
-            stroke="rgba(94,244,255,0.45)"
+            stroke={isLight ? 'rgba(2,132,199,0.45)' : 'rgba(94,244,255,0.45)'}
             strokeWidth="2.5"
             fill="none"
           />
           <Path
             d="M0 52 L390 52 C430 52 442 20 500 20 C558 20 570 52 610 52 L1000 52"
-            stroke="rgba(0,233,245,0.18)"
+            stroke={isLight ? 'rgba(2,132,199,0.16)' : 'rgba(0,233,245,0.18)'}
             strokeWidth="5"
             fill="none"
           />
@@ -83,6 +94,7 @@ function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
                     accessibilityRole="button"
                     accessibilityState={isFocused ? { selected: true } : {}}
                     onPress={() => {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       const e = navigation.emit({
                         type: 'tabPress',
                         target: route.key,
@@ -92,17 +104,21 @@ function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
                         navigation.navigate(route.name);
                       }
                     }}
-                    style={styles.scanButtonWrap}
+                    style={({ pressed }) => [styles.scanButtonWrap, pressed ? styles.scanButtonWrapPressed : null]}
                   >
                     <View
                       style={[
                         styles.scanButton,
+                        {
+                          backgroundColor: isLight ? '#ffffff' : '#0A1622',
+                          borderColor: isLight ? 'rgba(2,132,199,0.5)' : 'rgba(0, 233, 245, 0.55)',
+                        },
                         isFocused ? styles.scanButtonActive : null,
                       ]}
                     >
-                      <Camera size={24} color="#FFFFFF" />
+                      <Camera size={24} color={isLight ? '#0f172a' : '#FFFFFF'} />
                     </View>
-                    <Text style={styles.scanLabel}>SCAN</Text>
+                    <Text style={[styles.scanLabel, isLight ? { color: '#0f172a' } : null]}>SCAN</Text>
                   </Pressable>
                 </View>
               );
@@ -110,8 +126,8 @@ function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
 
             const label = name === 'index' ? 'DASHBOARD' : 'PROFIL';
             const Icon = name === 'index' ? LayoutDashboard : User;
-            const color = isFocused ? C_ACTIVE : C_INACTIVE;
-            const profileIconColor = isFocused ? C_ACTIVE : '#8B5CF6';
+            const color = isFocused ? (isLight ? '#0284c7' : C_ACTIVE) : (isLight ? '#64748b' : C_INACTIVE);
+            const profileIconColor = isFocused ? (isLight ? '#0284c7' : C_ACTIVE) : '#8B5CF6';
 
             return (
               <Pressable
@@ -119,6 +135,7 @@ function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
                 accessibilityRole="button"
                 accessibilityState={isFocused ? { selected: true } : {}}
                 onPress={() => {
+                  void Haptics.selectionAsync();
                   const e = navigation.emit({
                     type: 'tabPress',
                     target: route.key,
@@ -128,7 +145,7 @@ function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
                     navigation.navigate(route.name);
                   }
                 }}
-                style={styles.sideTab}
+                style={({ pressed }) => [styles.sideTab, pressed ? styles.sideTabPressed : null]}
               >
                 <View style={styles.indicatorSlot}>
                   {isFocused ? (
@@ -146,6 +163,7 @@ function LuxuryTabBar({ state, navigation }: BottomTabBarProps) {
                   <View
                     style={[
                       styles.profilIconRing,
+                      isLight ? { backgroundColor: '#ffffff' } : null,
                       isFocused ? styles.profilIconRingActive : styles.profilIconRingIdle,
                     ]}
                   >
@@ -267,6 +285,10 @@ const styles = StyleSheet.create({
     paddingBottom: 2,
     minHeight: 36,
   },
+  sideTabPressed: {
+    transform: [{ scale: 0.96 }],
+    opacity: 0.93,
+  },
   indicatorSlot: {
     height: 8,
     justifyContent: 'flex-end',
@@ -301,6 +323,10 @@ const styles = StyleSheet.create({
     top: SCAN_LIFT,
     alignItems: 'center',
     justifyContent: 'flex-start',
+  },
+  scanButtonWrapPressed: {
+    transform: [{ scale: 0.95 }],
+    opacity: 0.96,
   },
   scanButton: {
     width: SCAN_BTN,

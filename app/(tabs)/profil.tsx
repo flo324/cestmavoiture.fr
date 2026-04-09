@@ -12,6 +12,7 @@ import {
   Modal,
   Platform,
   ScrollView,
+  Switch,
   StyleSheet,
   Text,
   TextInput,
@@ -21,6 +22,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useKilometrage } from '../../context/KilometrageContext';
+import { useTheme } from '../../context/ThemeContext';
 import { useVehicle } from '../../context/VehicleContext';
 import { enhanceVehiclePhotoPremium } from '../../services/premiumVehiclePhoto';
 
@@ -202,6 +204,7 @@ async function cropVehicleSmart(uri: string): Promise<string> {
 
 export default function ProfilScreen() {
   const router = useRouter();
+  const { mode, toggleMode, isLight } = useTheme();
   const { height } = useWindowDimensions();
   const compact = height < 760;
   const roomy = height > 900;
@@ -363,25 +366,41 @@ export default function ProfilScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.keyboardRoot}
+      style={[styles.keyboardRoot, isLight ? styles.keyboardRootLight : null]}
       behavior="padding"
       keyboardVerticalOffset={Platform.OS === 'ios' ? (compact ? 58 : 64) : 0}
     >
-      <View style={[styles.container, compact ? styles.containerCompact : roomy ? styles.containerRoomy : null]}>
-        <Text style={styles.pageTitle}>PROFIL</Text>
+      <View
+        style={[
+          styles.container,
+          isLight ? styles.containerLight : null,
+          compact ? styles.containerCompact : roomy ? styles.containerRoomy : null,
+        ]}
+      >
+        <View style={styles.headerRow}>
+          <Text style={[styles.pageTitle, isLight ? styles.pageTitleLight : null]}>PROFIL</Text>
+          <View style={[styles.headerSwitchWrap, isLight ? styles.headerSwitchWrapLight : null]}>
+            <Switch
+              value={mode === 'light'}
+              onValueChange={() => void toggleMode()}
+              thumbColor={mode === 'light' ? '#ffffff' : '#cbd5e1'}
+              trackColor={{ false: 'rgba(71,85,105,0.45)', true: 'rgba(2,132,199,0.65)' }}
+            />
+          </View>
+        </View>
         {currentLogin ? (
           <Animated.View style={{ transform: [{ translateX: sessionSlide }] }}>
-            <Text style={styles.sessionHint}>Connecté : {currentLogin}</Text>
+            <Text style={[styles.sessionHint, isLight ? styles.sessionHintLight : null]}>Connecté : {currentLogin}</Text>
           </Animated.View>
         ) : null}
         {saveNotice ? <Text style={styles.saveNotice}>{saveNotice}</Text> : null}
-        <View style={[styles.card, compact ? styles.cardCompact : roomy ? styles.cardRoomy : null]}>
+        <View style={[styles.card, isLight ? styles.cardLight : null, compact ? styles.cardCompact : roomy ? styles.cardRoomy : null]}>
           <Text style={styles.sectionTitle}>INFORMATIONS PERSONNELLES</Text>
           <View style={styles.row}>
             <View style={styles.col}>
               <Text style={styles.label}>Prénom</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLight ? styles.inputLight : null]}
                 value={draft.prenom}
                 onChangeText={(t) => setDraft((prev) => ({ ...prev, prenom: t }))}
                 onBlur={confirmSaveIfNeeded}
@@ -390,7 +409,7 @@ export default function ProfilScreen() {
             <View style={styles.col}>
               <Text style={styles.label}>Nom</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLight ? styles.inputLight : null]}
                 value={draft.nom}
                 onChangeText={(t) => setDraft((prev) => ({ ...prev, nom: t }))}
                 onBlur={confirmSaveIfNeeded}
@@ -409,7 +428,7 @@ export default function ProfilScreen() {
             <View style={styles.col}>
               <Text style={styles.label}>Nom du véhicule</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLight ? styles.inputLight : null]}
                 value={draft.alias}
                 onChangeText={(t) => setDraft((prev) => ({ ...prev, alias: t }))}
                 onBlur={confirmSaveIfNeeded}
@@ -420,7 +439,7 @@ export default function ProfilScreen() {
             <View style={styles.col}>
               <Text style={styles.label}>Modèle du véhicule</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLight ? styles.inputLight : null]}
                 value={draft.modele}
                 onChangeText={(t) => setDraft((prev) => ({ ...prev, modele: t }))}
                 onBlur={confirmSaveIfNeeded}
@@ -434,7 +453,7 @@ export default function ProfilScreen() {
             <View style={styles.col}>
               <Text style={styles.label}>Immatriculation</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLight ? styles.inputLight : null]}
                 value={draft.immat}
                 onChangeText={(t) => setDraft((prev) => ({ ...prev, immat: t }))}
                 onBlur={confirmSaveIfNeeded}
@@ -443,7 +462,7 @@ export default function ProfilScreen() {
             <View style={styles.col}>
               <Text style={styles.label}>Kilométrage actuel</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLight ? styles.inputLight : null]}
                 value={draft.km}
                 onChangeText={(t) => setDraft((prev) => ({ ...prev, km: t }))}
                 onBlur={confirmSaveIfNeeded}
@@ -571,16 +590,40 @@ export default function ProfilScreen() {
 
 const styles = StyleSheet.create({
   keyboardRoot: { flex: 1, backgroundColor: '#0b0f14' },
+  keyboardRootLight: { backgroundColor: '#f5f8fc' },
   container: { flex: 1, backgroundColor: '#0b0f14', paddingHorizontal: 16, paddingTop: 50, paddingBottom: 12 },
+  containerLight: { backgroundColor: '#f5f8fc' },
   containerCompact: { paddingTop: 42, paddingBottom: 8 },
   containerRoomy: { paddingTop: 56, paddingBottom: 16 },
   pageTitle: { fontSize: 22, fontWeight: '800', color: '#e2e8f0', textAlign: 'center', marginBottom: 10 },
+  pageTitleLight: { color: '#0f172a' },
+  headerRow: {
+    position: 'relative',
+    alignItems: 'center',
+    marginBottom: 10,
+    minHeight: 30,
+  },
+  headerSwitchWrap: {
+    position: 'absolute',
+    right: 0,
+    borderRadius: 999,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0,242,255,0.35)',
+    backgroundColor: 'rgba(15,23,42,0.45)',
+  },
+  headerSwitchWrapLight: {
+    borderColor: 'rgba(2,132,199,0.3)',
+    backgroundColor: '#ffffff',
+  },
   sessionHint: {
     fontSize: 12,
     color: '#64748b',
     textAlign: 'center',
     marginBottom: 12,
   },
+  sessionHintLight: { color: '#475569' },
   saveNotice: {
     alignSelf: 'center',
     marginBottom: 10,
@@ -603,6 +646,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1f2937',
+  },
+  cardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe5f2',
   },
   cardCompact: { paddingHorizontal: 12, paddingVertical: 10 },
   cardRoomy: { paddingHorizontal: 16, paddingVertical: 14 },
@@ -627,6 +674,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#243246',
     fontSize: 13,
+  },
+  inputLight: {
+    backgroundColor: '#f8fbff',
+    color: '#0f172a',
+    borderColor: '#c7d7ea',
   },
   photoPicker: {
     height: 132,
