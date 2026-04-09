@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BarChart3, ClipboardList, FileText, PenTool, Settings } from 'lucide-react-native';
-import React, { useCallback, useMemo, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Ellipse, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -87,7 +88,11 @@ export default function HomeScreen() {
     filledModules: 0,
     lastUpdate: '-',
   });
+  const [docPreview, setDocPreview] = useState({ permis: '', cg: '' });
+  const [docModal, setDocModal] = useState<null | 'permis' | 'cg'>(null);
   const compact = screenH < 820;
+  const marqueeAnim = useRef(new Animated.Value(0)).current;
+  const alertPulse = useRef(new Animated.Value(1)).current;
 
   const kmStats = useMemo(() => {
     const total = parseOdometerKm(kmCtx?.km);
@@ -102,9 +107,11 @@ export default function HomeScreen() {
     useCallback(() => {
       const loadCtStatus = async () => {
         try {
-          const [raw, rawEntretien] = await Promise.all([
+          const [raw, rawEntretien, rawPermis, rawCg] = await Promise.all([
             userGetItem('@ma_voiture_ct_data'),
             userGetItem('@ma_voiture_entretien_modules_v1'),
+            userGetItem('@ma_voiture_permis_data'),
+            userGetItem('@ma_voiture_cg_data_complete'),
           ]);
           if (!raw) {
             setCtBanner({ text: 'Échéance du prochain CT : NON DISPONIBLE', daysLeft: null });
@@ -149,6 +156,14 @@ export default function HomeScreen() {
           } else {
             setEntretienKpi({ filledModules: 0, lastUpdate: '-' });
           }
+
+          try {
+            const permisImage = rawPermis ? String((JSON.parse(rawPermis) as { image?: string })?.image ?? '') : '';
+            const cgImage = rawCg ? String((JSON.parse(rawCg) as { image?: string })?.image ?? '') : '';
+            setDocPreview({ permis: permisImage, cg: cgImage });
+          } catch {
+            setDocPreview({ permis: '', cg: '' });
+          }
         } catch (error) {
           console.log('[Home] load CT status failed', error);
         }
@@ -181,6 +196,114 @@ export default function HomeScreen() {
         break;
     }
   };
+
+  const dashboardTickerText = useMemo(() => {
+    const messages: string[] = [];
+    if (ctBanner.daysLeft == null) {
+      messages.push('CT: DATE NON DISPONIBLE, À RENSEIGNER');
+    } else if (ctBanner.daysLeft < 0) {
+      messages.push(`URGENT: CT EXPIRÉ DEPUIS ${Math.abs(ctBanner.daysLeft)} JOURS`);
+    } else if (ctBanner.daysLeft < 30) {
+      messages.push(`PRIORITÉ: CT À FAIRE DANS ${ctBanner.daysLeft} JOURS`);
+    } else {
+      messages.push(`CT OK: ÉCHÉANCE DANS ${ctBanner.daysLeft} JOURS`);
+    }
+
+    if (entretienKpi.filledModules === 0) {
+      messages.push('ENTRETIEN: AUCUN MODULE INITIALISÉ');
+    } else if (entretienKpi.filledModules < 3) {
+      messages.push(`ENTRETIEN: ${entretienKpi.filledModules}/3 MODULES ACTIFS`);
+    } else {
+      messages.push('ENTRETIEN: TOUS LES MODULES SONT À JOUR');
+    }
+
+    messages.push(`KILOMÉTRAGE TOTAL: ${formatKmFr(kmStats.total)} KM`);
+    return `INFO IMPORTANTE • ${messages.join(' • ')} •`;
+  }, [ctBanner.daysLeft, entretienKpi.filledModules, kmStats.total]);
+
+  const tickerTone = useMemo(() => {
+    if (ctBanner.daysLeft == null) {
+      return {
+        dot: '#8e8e8e',
+        border: 'rgba(148,163,184,0.45)',
+        text: '#dbeafe',
+        label: 'INFO',
+        gradient: ['rgba(148,163,184,0.16)', 'rgba(7,10,16,0.85)', 'rgba(148,163,184,0.14)'] as const,
+      };
+    }
+    if (ctBanner.daysLeft < 30) {
+      return {
+        priority: 'high' as const,
+        dot: '#ef4444',
+        border: 'rgba(239,68,68,0.72)',
+        text: '#ffe4e6',
+        label: 'ALERTE PRIORITAIRE',
+        gradient: ['rgba(239,68,68,0.34)', 'rgba(20,8,10,0.94)', 'rgba(239,68,68,0.26)'] as const,
+      };
+    }
+    if (ctBanner.daysLeft < 90) {
+      return {
+        priority: 'medium' as const,
+        dot: '#f59e0b',
+        border: 'rgba(245,158,11,0.7)',
+        text: '#fff3c4',
+        label: 'VIGILANCE',
+        gradient: ['rgba(245,158,11,0.3)', 'rgba(18,12,7,0.92)', 'rgba(245,158,11,0.22)'] as const,
+      };
+    }
+    return {
+      priority: 'low' as const,
+      dot: '#22c55e',
+      border: 'rgba(34,197,94,0.64)',
+      text: '#ecfdf5',
+      label: 'INFO LIVE',
+      gradient: ['rgba(0,242,255,0.24)', 'rgba(7,10,16,0.92)', 'rgba(212,175,55,0.2)'] as const,
+    };
+  }, [ctBanner.daysLeft]);
+
+  useEffect(() => {
+    if (tickerTone.priority !== 'high') {
+      alertPulse.setValue(1);
+      return;
+    }
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(alertPulse, {
+          toValue: 1.22,
+          duration: 520,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(alertPulse, {
+          toValue: 1,
+          duration: 520,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [alertPulse, tickerTone.priority]);
+
+  useEffect(() => {
+    marqueeAnim.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(marqueeAnim, {
+        toValue: 1,
+        duration: 18000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [marqueeAnim, dashboardTickerText]);
+
+  const marqueeTranslateX = marqueeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -520],
+  });
 
   return (
     <View style={styles.container}>
@@ -223,12 +346,41 @@ export default function HomeScreen() {
             style={styles.vehicleTopBeam}
           />
           <View style={styles.vehicleCardTextContainer}>
-            <Text style={styles.vehicleCardTitle}>PROFIL VÉHICULE</Text>
             <Text style={styles.vehicleCardName}>{vehicleData.alias || vehicleData.modele || '-'}</Text>
             <Text style={styles.vehicleCardModel}>MODÈLE {vehicleData.modele || '-'}</Text>
             <View style={styles.immatBadge}>
               <Text style={styles.immatBadgeLabel}>IMMAT</Text>
               <Text style={styles.immatBadgeValue}>{vehicleData.immat || '-'}</Text>
+            </View>
+            <View style={styles.docQuickRow}>
+              <Pressable
+                style={({ pressed }) => [styles.docQuickBtn, pressed ? styles.cardPressed : null]}
+                onPress={() => {
+                  if (!docPreview.permis) return;
+                  setDocModal('permis');
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="card-account-details-outline"
+                  size={16}
+                  color={docPreview.permis ? '#7dd3fc' : '#64748b'}
+                />
+                <Text style={[styles.docQuickText, !docPreview.permis && styles.docQuickTextDisabled]}>Permis</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.docQuickBtn, pressed ? styles.cardPressed : null]}
+                onPress={() => {
+                  if (!docPreview.cg) return;
+                  setDocModal('cg');
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="file-document-outline"
+                  size={16}
+                  color={docPreview.cg ? '#f7e8b8' : '#64748b'}
+                />
+                <Text style={[styles.docQuickText, !docPreview.cg && styles.docQuickTextDisabled]}>Carte grise</Text>
+              </Pressable>
             </View>
             <Text style={styles.vehicleCardKm}>{formatKmFr(kmStats.total)} KM</Text>
           </View>
@@ -277,6 +429,31 @@ export default function HomeScreen() {
           </LinearGradient>
         </LinearGradient>
 
+        <View style={styles.tickerWrap}>
+          <LinearGradient
+            colors={tickerTone.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.tickerCard, { borderColor: tickerTone.border }]}
+          >
+            <View style={styles.tickerHeaderRow}>
+              <Animated.View
+                style={[
+                  styles.tickerDot,
+                  { backgroundColor: tickerTone.dot, transform: [{ scale: alertPulse }] },
+                ]}
+              />
+              <Text style={[styles.tickerHeader, { color: tickerTone.text }]}>{tickerTone.label}</Text>
+            </View>
+            <View style={styles.tickerViewport}>
+              <Animated.View style={[styles.tickerTrack, { transform: [{ translateX: marqueeTranslateX }] }]}>
+                <Text style={[styles.tickerText, { color: tickerTone.text }]}>{dashboardTickerText}</Text>
+                <Text style={[styles.tickerText, { color: tickerTone.text }]}>   {dashboardTickerText}</Text>
+              </Animated.View>
+            </View>
+          </LinearGradient>
+        </View>
+
         {/* Categories Grid */}
         <View style={[styles.gridContainer, compact ? styles.gridContainerCompact : null]}>
           {categories.map((category, index) => {
@@ -322,14 +499,6 @@ export default function HomeScreen() {
                     </View>
                     <Text style={styles.categoryTitle}>{category.title}</Text>
                     <Text style={styles.categoryDescription}>{category.description}</Text>
-                    <View
-                      style={[
-                        styles.ctBanner,
-                        { backgroundColor: ctBanner.daysLeft == null ? '#8e8e8e' : ctUrgencyColor(ctBanner.daysLeft) },
-                      ]}
-                    >
-                      <Text style={styles.ctBannerText}>{ctBanner.text}</Text>
-                    </View>
                   </>
                 ) : category.id === 1 ? (
                   <>
@@ -338,27 +507,6 @@ export default function HomeScreen() {
                     </View>
                     <Text style={styles.categoryTitle}>{category.title}</Text>
                     <Text style={styles.categoryDescription}>{category.description}</Text>
-                    <View
-                      style={[
-                        styles.maintenanceStatusBadge,
-                        entretienKpi.filledModules >= 3
-                          ? styles.maintenanceStatusOk
-                          : entretienKpi.filledModules === 0
-                            ? styles.maintenanceStatusInit
-                            : styles.maintenanceStatusPlan,
-                      ]}
-                    >
-                      <Text style={styles.maintenanceStatusText}>
-                        {entretienKpi.filledModules >= 3
-                          ? 'A JOUR'
-                          : entretienKpi.filledModules === 0
-                            ? 'A INITIALISER'
-                            : 'A PLANIFIER'}
-                      </Text>
-                    </View>
-                    <Text style={styles.maintenanceMeta}>
-                      Modules actifs: {entretienKpi.filledModules}/3 | Dernière MAJ: {entretienKpi.lastUpdate}
-                    </Text>
                   </>
                 ) : (
                   <>
@@ -374,6 +522,18 @@ export default function HomeScreen() {
           })}
         </View>
       </View>
+      <Modal visible={docModal != null} transparent animationType="fade" onRequestClose={() => setDocModal(null)}>
+        <View style={styles.docModalBg}>
+          <TouchableOpacity style={styles.docModalClose} onPress={() => setDocModal(null)}>
+            <MaterialCommunityIcons name="close-circle" size={42} color="#ffffff" />
+          </TouchableOpacity>
+          <Image
+            source={{ uri: docModal === 'permis' ? docPreview.permis : docPreview.cg }}
+            style={styles.docModalImage}
+            resizeMode="contain"
+          />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -490,6 +650,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
+  docQuickRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  docQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.45)',
+    backgroundColor: 'rgba(4,8,14,0.55)',
+  },
+  docQuickText: {
+    color: '#dbeafe',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  docQuickTextDisabled: {
+    color: '#64748b',
+  },
   immatBadge: {
     marginTop: 6,
     alignSelf: 'flex-start',
@@ -602,6 +788,71 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: 'rgba(0,0,0,0.14)',
     zIndex: 2,
+  },
+  docModalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  docModalClose: {
+    position: 'absolute',
+    top: 52,
+    right: 18,
+    zIndex: 2,
+  },
+  docModalImage: {
+    width: '94%',
+    height: '86%',
+  },
+  tickerWrap: {
+    marginBottom: 10,
+  },
+  tickerCard: {
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: 'rgba(0,242,255,0.34)',
+    overflow: 'hidden',
+    paddingHorizontal: 12,
+    paddingTop: 9,
+    paddingBottom: 11,
+    shadowColor: '#00F2FF',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  tickerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  tickerDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4.5,
+    backgroundColor: '#22c55e',
+    marginRight: 7,
+  },
+  tickerHeader: {
+    color: '#dbeafe',
+    fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  tickerViewport: {
+    width: '100%',
+    overflow: 'hidden',
+  },
+  tickerTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tickerText: {
+    color: '#eef7ff',
+    fontSize: 11.8,
+    fontWeight: '800',
+    letterSpacing: 0.25,
   },
   gridContainer: {
     flex: 1,

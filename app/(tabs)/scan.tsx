@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -260,7 +260,9 @@ export default function ScanScreen() {
   const takePhoto = useCallback(async () => {
     const uriScanned = await scanDocumentWithFallback();
     if (!uriScanned) {
-      Alert.alert('Permission requise', 'Autorisez la caméra pour scanner.');
+      // Si l'utilisateur annule la caméra / scanner, on revient à l'accueil
+      // pour éviter de rester bloqué visuellement sur l'onglet Scan.
+      router.replace('/(tabs)');
       return;
     }
     const normalized = await normalizeDocumentCapture(uriScanned, {
@@ -272,18 +274,27 @@ export default function ScanScreen() {
     setUri(normalized.uri);
     setBase64(normalized.base64 ?? '');
     await analyzeCaptured(normalized.base64 ?? '');
-  }, [analyzeCaptured]);
+  }, [analyzeCaptured, router]);
 
-  useEffect(() => {
-    if (step !== 'idle') return;
-    if (launchLockRef.current) return;
-    launchLockRef.current = true;
-    takePhoto()
-      .catch(() => {})
-      .finally(() => {
-        launchLockRef.current = false;
-      });
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (step !== 'idle' || launchLockRef.current) return;
+      let cancelled = false;
+      const timer = setTimeout(() => {
+        if (cancelled || launchLockRef.current) return;
+        launchLockRef.current = true;
+        takePhoto()
+          .catch(() => {})
+          .finally(() => {
+            launchLockRef.current = false;
+          });
+      }, 180);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
+    }, [step, takePhoto])
+  );
 
   const runAnalysis = useCallback(async () => {
     await analyzeCaptured(base64);
@@ -616,7 +627,19 @@ export default function ScanScreen() {
         ]}
       >
         {step === 'idle' && (
-          <View style={styles.centerCol} />
+          <View style={styles.centerCol}>
+            <Text style={styles.title}>Scan intelligent</Text>
+            <Text style={styles.subtitle}>
+              Lancez une nouvelle capture pour classer automatiquement votre document.
+            </Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={takePhoto} activeOpacity={0.9}>
+              <MaterialCommunityIcons name="camera" size={22} color="#0b0f14" />
+              <Text style={styles.primaryBtnText}> DÉMARRER LE SCAN</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.ghostBtn} onPress={() => router.replace('/(tabs)')}>
+              <Text style={styles.ghostBtnText}>RETOUR ACCUEIL</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {step === 'preview' && uri ? (

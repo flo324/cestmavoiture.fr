@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +17,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GarageConnectLogo } from '../components/GarageConnectLogo';
 import { useAuth } from '../context/AuthContext';
+import { userGetItem, userRemoveItem, userSetItem } from '../services/userStorage';
+
+const REMEMBER_LOGIN_KEY = '@garage_connect_remember_login_v1';
+type RememberLoginPayload = { email: string; password: string; remember: boolean };
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -30,6 +34,35 @@ export default function LoginScreen() {
   const [createMode, setCreateMode] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showPass2, setShowPass2] = useState(false);
+  const [rememberLogin, setRememberLogin] = useState(true);
+
+  useEffect(() => {
+    const loadRememberedLogin = async () => {
+      try {
+        const raw = await userGetItem(REMEMBER_LOGIN_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as Partial<RememberLoginPayload>;
+        if (parsed.remember) {
+          setRememberLogin(true);
+          setEmail(typeof parsed.email === 'string' ? parsed.email : '');
+          setPass(typeof parsed.password === 'string' ? parsed.password : '');
+        }
+      } catch {
+        // ignore corrupted local payload
+      }
+    };
+    loadRememberedLogin();
+  }, []);
+
+  useEffect(() => {
+    const persistDraft = async () => {
+      if (createMode) return;
+      if (!rememberLogin) return;
+      const payload: RememberLoginPayload = { email, password: pass, remember: true };
+      await userSetItem(REMEMBER_LOGIN_KEY, JSON.stringify(payload));
+    };
+    persistDraft();
+  }, [email, pass, createMode, rememberLogin]);
 
   const submit = async () => {
     if (busy) return;
@@ -59,6 +92,12 @@ export default function LoginScreen() {
       if (!r.ok) {
         Alert.alert('Connexion', r.error ?? 'Échec de la connexion.');
         return;
+      }
+      if (rememberLogin) {
+        const payload: RememberLoginPayload = { email, password: pass, remember: true };
+        await userSetItem(REMEMBER_LOGIN_KEY, JSON.stringify(payload));
+      } else {
+        await userRemoveItem(REMEMBER_LOGIN_KEY);
       }
       router.replace('/splash');
     } finally {
@@ -175,6 +214,30 @@ export default function LoginScreen() {
             </>
           ) : null}
 
+          {!createMode ? (
+            <TouchableOpacity
+              style={styles.rememberRow}
+              onPress={async () => {
+                const next = !rememberLogin;
+                setRememberLogin(next);
+                if (!next) {
+                  await userRemoveItem(REMEMBER_LOGIN_KEY);
+                } else {
+                  const payload: RememberLoginPayload = { email, password: pass, remember: true };
+                  await userSetItem(REMEMBER_LOGIN_KEY, JSON.stringify(payload));
+                }
+              }}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons
+                name={rememberLogin ? 'checkbox-marked-circle-outline' : 'checkbox-blank-circle-outline'}
+                size={20}
+                color={rememberLogin ? '#00E9F5' : '#64748b'}
+              />
+              <Text style={styles.rememberText}>Se souvenir de mon identifiant et mot de passe</Text>
+            </TouchableOpacity>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.btn, busy && styles.btnDisabled]}
             onPress={submit}
@@ -274,6 +337,17 @@ const styles = StyleSheet.create({
     height: 34,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  rememberRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rememberText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
   },
   btn: {
     marginTop: 22,

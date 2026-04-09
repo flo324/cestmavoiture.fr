@@ -924,13 +924,15 @@ export default function EntretienScreen() {
             >
               <MaterialCommunityIcons name="arrow-left" size={24} color="#00F2FF" />
             </TouchableOpacity>
-            <View style={styles.modalHeaderCenter}>
-              <View style={styles.modalHeaderIconWrap}>
-                <MaterialCommunityIcons name={panelMeta.icon} size={19} color="#00F2FF" />
+            {activePanel === 'pneus' ? <View style={styles.modalHeaderCenterHidden} /> : (
+              <View style={styles.modalHeaderCenter}>
+                <View style={styles.modalHeaderIconWrap}>
+                  <MaterialCommunityIcons name={panelMeta.icon} size={19} color="#00F2FF" />
+                </View>
+                <Text style={styles.modalTitle}>{activePanel?.toUpperCase() || ''}</Text>
+                <Text style={styles.modalSubtitle}>{panelMeta.subtitle}</Text>
               </View>
-              <Text style={styles.modalTitle}>{activePanel?.toUpperCase() || ''}</Text>
-              <Text style={styles.modalSubtitle}>{panelMeta.subtitle}</Text>
-            </View>
+            )}
             <View style={{ width: 24 }} />
           </View>
 
@@ -944,19 +946,29 @@ export default function EntretienScreen() {
               <View style={styles.card}>
                 {pneusView === 'menu' ? (
                   <>
-                    <View style={styles.pneusHeroCard}>
-                      <View style={styles.pneusHeroIconWrap}>
-                        <MaterialCommunityIcons name="tire" size={34} color="#d4af37" />
-                      </View>
-                      <Text style={styles.pneusHeroTitle}>Atelier Pneus</Text>
-                      <Text style={styles.pneusHeroSub}>Créez ou consultez votre dossier avec un parcours guidé premium</Text>
-                    </View>
-                    <Pressable style={({ pressed }) => [styles.folderCard, styles.glassCard, pressed && styles.scaleDown]} onPress={() => startPneusWizard(true)}>
+                    <ImageBackground
+                      source={{ uri: 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&w=1600&q=70' }}
+                      style={styles.pneusHeroBanner}
+                      imageStyle={styles.pneusHeroBannerImage}
+                    >
+                      <LinearGradient
+                        colors={['rgba(0,0,0,0.16)', 'rgba(0,0,0,0.72)', UI_THEME.bg]}
+                        locations={[0, 0.56, 1]}
+                        style={styles.pneusHeroOverlay}
+                      >
+                        <View style={styles.pneusHeroIconWrap}>
+                          <MaterialCommunityIcons name="tire" size={30} color="#d4af37" />
+                        </View>
+                        <Text style={styles.pneusHeroTitle}>Atelier Pneus</Text>
+                        <Text style={styles.pneusHeroSub}>Créez ou consultez votre dossier avec un parcours guidé premium</Text>
+                      </LinearGradient>
+                    </ImageBackground>
+                    <Pressable style={({ pressed }) => [styles.folderCard, styles.pneusActionCard, styles.glassCard, pressed && styles.scaleDown]} onPress={() => startPneusWizard(true)}>
                       <MaterialCommunityIcons name="tire" size={24} color="#d4af37" />
                       <Text style={styles.folderTitle}>VOUS AVEZ CHANGÉ DE PNEUS ?</Text>
                       <Text style={styles.folderSub}>Lancer le formulaire guidé</Text>
                     </Pressable>
-                    <Pressable style={({ pressed }) => [styles.folderCard, styles.glassCard, { marginTop: 10 }, pressed && styles.scaleDown]} onPress={() => setPneusView('view')}>
+                    <Pressable style={({ pressed }) => [styles.folderCard, styles.pneusActionCard, styles.glassCard, { marginTop: 10 }, pressed && styles.scaleDown]} onPress={() => setPneusView('view')}>
                       <MaterialCommunityIcons name="folder-eye-outline" size={24} color="#67e8f9" />
                       <Text style={styles.folderTitle}>VOIR MES PNEUS</Text>
                       <Text style={styles.folderSub}>Consulter le dossier enregistré</Text>
@@ -1316,10 +1328,18 @@ const styles = StyleSheet.create({
   },
   folderTitle: { color: '#fff', fontSize: 12, fontWeight: '800', marginTop: 6 },
   folderSub: { color: '#94a3b8', fontSize: 10, marginTop: 2 },
+  pneusActionCard: {
+    minHeight: 92,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
 
   modalContainer: { flex: 1, backgroundColor: UI_THEME.bg, paddingTop: 50, paddingHorizontal: 14 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   modalHeaderCenter: { alignItems: 'center', flex: 1, paddingHorizontal: 8 },
+  modalHeaderCenterHidden: { flex: 1 },
   modalHeaderIconWrap: {
     width: 34,
     height: 34,
@@ -1333,20 +1353,26 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 17, fontWeight: '800', color: UI_THEME.textSecondary },
   modalSubtitle: { marginTop: 2, fontSize: 11, color: '#94a3b8', textAlign: 'center' },
-  pneusHeroCard: {
-    backgroundColor: '#0f172a',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    alignItems: 'center',
+  pneusHeroBanner: {
+    height: 140,
+    borderRadius: 16,
+    overflow: 'hidden',
     marginBottom: 10,
+    borderWidth: 0.5,
+    borderColor: UI_THEME.goldBorder,
+  },
+  pneusHeroBannerImage: { resizeMode: 'cover' },
+  pneusHeroOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 12,
+    paddingHorizontal: 12,
   },
   pneusHeroIconWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(212,175,55,0.14)',
@@ -1354,8 +1380,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(212,175,55,0.4)',
     marginBottom: 8,
   },
-  pneusHeroTitle: { color: '#f1f5f9', fontSize: 19, fontWeight: '900' },
-  pneusHeroSub: { color: '#94a3b8', marginTop: 4, textAlign: 'center', fontSize: 12 },
+  pneusHeroTitle: { color: '#f8fafc', fontSize: 23, fontWeight: '900' },
+  pneusHeroSub: { color: '#dbeafe', marginTop: 4, textAlign: 'center', fontSize: 12 },
   moduleHeroCard: {
     backgroundColor: '#0f172a',
     borderRadius: 14,

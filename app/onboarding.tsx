@@ -5,6 +5,8 @@ import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, T
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ONBOARDING_STATUS_KEY, type OnboardingStatus } from '../constants/onboarding';
+import { autoAttachManualForVehicle } from '../services/manualAutofill';
+import { autoAttachVehiclePhoto } from '../services/vehiclePhotoAutofill';
 import { userSetItem } from '../services/userStorage';
 
 const STORAGE_KEY_VEHICLES = '@cestmavoiture_user_vehicles_v1';
@@ -40,6 +42,8 @@ export default function OnboardingScreen() {
   const [alias, setAlias] = useState('');
   const [immat, setImmat] = useState('');
   const [photoUri, setPhotoUri] = useState('');
+  const [manualAutoStatus, setManualAutoStatus] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
+  const [photoAutoStatus, setPhotoAutoStatus] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
 
   const canContinueVehicle = useMemo(() => alias.trim().length > 0 && modele.trim().length > 0, [alias, modele]);
   const progressPct = useMemo(() => (step / STEP_COUNT) * 100, [step]);
@@ -53,7 +57,7 @@ export default function OnboardingScreen() {
     await userSetItem(ONBOARDING_STATUS_KEY, JSON.stringify(status));
   };
 
-  const saveVehicleProfile = async () => {
+  const saveVehicleProfile = async (photoToPersist: string) => {
     const id = 'default';
     const payload = [
       {
@@ -63,7 +67,7 @@ export default function OnboardingScreen() {
         nom: nom.trim(),
         modele: modele.trim(),
         immat: immat.trim(),
-        photoUri: photoUri.trim(),
+        photoUri: photoToPersist.trim(),
         photoBgCenter: '#334155',
         photoBgEdge: '#0B1120',
       },
@@ -106,7 +110,26 @@ export default function OnboardingScreen() {
     if (busy) return;
     setBusy(true);
     try {
-      await saveVehicleProfile();
+      let profilePhotoUri = photoUri.trim();
+      if (!profilePhotoUri) {
+        setPhotoAutoStatus('loading');
+        const autoPhoto = await autoAttachVehiclePhoto(modele.trim());
+        if (autoPhoto) {
+          profilePhotoUri = autoPhoto;
+          setPhotoUri(autoPhoto);
+          setPhotoAutoStatus('done');
+        } else {
+          setPhotoAutoStatus('failed');
+        }
+      } else {
+        setPhotoAutoStatus('done');
+      }
+
+      await saveVehicleProfile(profilePhotoUri);
+      setManualAutoStatus('loading');
+      autoAttachManualForVehicle(modele.trim(), immat.trim())
+        .then((ok) => setManualAutoStatus(ok ? 'done' : 'failed'))
+        .catch(() => setManualAutoStatus('failed'));
       await saveOnboardingStatus(false);
       setStep(3);
     } finally {
@@ -206,6 +229,30 @@ export default function OnboardingScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Démarrage intelligent</Text>
             <Text style={styles.helper}>Scannez un premier document pour alimenter votre assistant véhicule dès maintenant.</Text>
+            <View style={styles.manualStatusCard}>
+              <Text style={styles.manualStatusTitle}>Photo véhicule automatique</Text>
+              <Text style={styles.manualStatusText}>
+                {photoAutoStatus === 'loading'
+                  ? 'Recherche et téléchargement de la photo du modèle en cours...'
+                  : photoAutoStatus === 'done'
+                    ? 'Photo du modèle prête dans le profil (modifiable à tout moment).'
+                    : photoAutoStatus === 'failed'
+                      ? 'Photo auto non trouvée. Vous pourrez en choisir une dans Profil.'
+                      : 'Une photo modèle sera ajoutée automatiquement si aucune photo n est fournie.'}
+              </Text>
+            </View>
+            <View style={styles.manualStatusCard}>
+              <Text style={styles.manualStatusTitle}>Mode d&apos;emploi automatique</Text>
+              <Text style={styles.manualStatusText}>
+                {manualAutoStatus === 'loading'
+                  ? 'Recherche et téléchargement du PDF en cours...'
+                  : manualAutoStatus === 'done'
+                    ? 'PDF du mode d emploi prêt dans la case Entretien > Mode emploi.'
+                    : manualAutoStatus === 'failed'
+                      ? 'Téléchargement auto non trouvé. Vous pourrez le lancer manuellement dans Entretien.'
+                      : 'Le téléchargement automatique démarrera après validation du véhicule.'}
+              </Text>
+            </View>
             <TouchableOpacity style={styles.btn} onPress={() => router.replace('/(tabs)/scan')}>
               <Text style={styles.btnText}>Scanner mon premier document</Text>
             </TouchableOpacity>
@@ -303,5 +350,24 @@ const styles = StyleSheet.create({
   secondaryBtnText: { color: '#94a3b8', fontWeight: '800', fontSize: 13 },
   switchBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 6 },
   switchBtnText: { color: '#94a3b8', fontSize: 12, fontWeight: '700' },
+  manualStatusCard: {
+    marginTop: 10,
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0f172a',
+  },
+  manualStatusTitle: {
+    color: '#cfe7ff',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  manualStatusText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    lineHeight: 18,
+  },
 });
 
