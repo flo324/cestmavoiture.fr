@@ -272,7 +272,7 @@ async function analyzeCtWithIA(uri: string): Promise<CtInfoState> {
     reparations: '',
   };
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
   if (!apiKey) return fallback;
 
   try {

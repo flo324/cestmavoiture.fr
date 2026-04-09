@@ -145,7 +145,7 @@ Réponds UNIQUEMENT ce JSON strict, sans markdown :
 `.trim();
 
 async function classifyWithGemini(base64: string): Promise<{ suggestedId: number; reason: string }> {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
   if (!apiKey) {
     return { suggestedId: 2, reason: 'Clé API absente — Documents proposés par défaut.' };
   }

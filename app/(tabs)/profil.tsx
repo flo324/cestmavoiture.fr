@@ -124,7 +124,7 @@ async function callGeminiVehicleBox(
 }
 
 async function detectVehicleBoxWithIA(normUri: string): Promise<VehicleBox | null> {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
   if (!apiKey) return null;
 
   const base64Image = await FileSystem.readAsStringAsync(normUri, {

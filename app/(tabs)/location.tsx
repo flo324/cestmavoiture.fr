@@ -6,7 +6,7 @@ import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform,
 import { useKilometrage } from '../../context/KilometrageContext';
 import { normalizeDocumentCapture } from '../../services/documentScan';
 
-const GEMINI_KEY = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+const GEMINI_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 
 export default function LocationScreen() {
   // RÉCUPÉRATION SÉCURISÉE
