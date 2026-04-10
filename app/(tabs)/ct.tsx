@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  ImageBackground,
   Modal,
   Pressable,
   ScrollView,
@@ -19,6 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddressAutocompleteInput } from '../../components/AddressAutocompleteInput';
+import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
 import { normalizeDocumentCapture } from '../../services/documentScan';
 import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
@@ -607,19 +607,13 @@ export default function CtScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
-      <ImageBackground
-        source={{ uri: 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&w=1600&q=70' }}
-        style={styles.heroBanner}
-        imageStyle={styles.heroBannerImage}
-      >
-        <LinearGradient colors={['rgba(0,0,0,0.16)', 'rgba(0,0,0,0.72)', '#0b0f14']} locations={[0, 0.55, 1]} style={styles.heroOverlay}>
-          <View style={styles.heroIconWrap}>
-            <MaterialCommunityIcons name="clipboard-text-search-outline" size={30} color="#00F2FF" />
-          </View>
-          <Text style={styles.pageTitle}>Mes contrôles techniques</Text>
-          <Text style={styles.heroSubtitle}>Suivi professionnel, clair et visuel de vos dossiers CT</Text>
-        </LinearGradient>
-      </ImageBackground>
+      <PremiumHeroBanner variant="ct" height={140} alignCenter>
+        <View style={styles.heroIconWrap}>
+          <MaterialCommunityIcons name="clipboard-text-search-outline" size={30} color="#00F2FF" />
+        </View>
+        <Text style={styles.pageTitle}>Mes contrôles techniques</Text>
+        <Text style={styles.heroSubtitle}>Suivi professionnel, clair et visuel de vos dossiers CT</Text>
+      </PremiumHeroBanner>
 
       <Pressable onPress={handleNewFolder} style={({ pressed }) => [styles.newFolderBtnWrap, pressed && styles.scaleDown]}>
         <LinearGradient colors={['#05080d', '#0d1b12']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.newFolderBtn}>
@@ -628,7 +622,7 @@ export default function CtScreen() {
         </LinearGradient>
       </Pressable>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }} keyboardDismissMode="on-drag">
+      <ScrollView contentContainerStyle={{ paddingBottom: 24 }} keyboardDismissMode="on-drag" scrollEnabled={false}>
         {folders.map((folder) => {
           const left = daysUntil(folder.info.prochainCt);
           return (
@@ -677,6 +671,7 @@ export default function CtScreen() {
               contentContainerStyle={{ paddingBottom: 28 }}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
+              scrollEnabled={false}
             >
               <TouchableOpacity style={styles.imageWrap} onPress={() => setImageModal(true)}>
                 <Image source={{ uri: selectedFolder.imageUri }} style={styles.image} />
@@ -774,22 +769,6 @@ export default function CtScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: UI_THEME.bg, paddingHorizontal: 16, paddingTop: 54 },
-  heroBanner: {
-    height: 140,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 12,
-    borderWidth: 0.5,
-    borderColor: UI_THEME.cyanBorder,
-  },
-  heroBannerImage: { resizeMode: 'cover' },
-  heroOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 12,
-    paddingHorizontal: 12,
-  },
   heroCard: {
     backgroundColor: 'rgba(7,10,16,0.75)',
     borderWidth: 0.5,

@@ -1,22 +1,13 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  Image,
-  ImageBackground,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useKilometrage } from '../../context/KilometrageContext';
 import { UI_THEME } from '../../constants/uiTheme';
 import { STORAGE_KM_MEMOS } from '../../constants/scanConstants';
+import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { userGetItem } from '../../services/userStorage';
 
 /** Odomètre total : chaîne type "190 000" → nombre, sinon 0 */
@@ -131,24 +122,15 @@ export default function KilometrageScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={false}
       >
-        <ImageBackground
-          source={{ uri: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=1600&q=70' }}
-          style={styles.heroBanner}
-          imageStyle={styles.heroBannerImage}
-        >
-          <LinearGradient
-            colors={['rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)', UI_THEME.bg]}
-            locations={[0, 0.56, 1]}
-            style={styles.heroOverlay}
-          >
-            <View style={styles.heroIconWrap}>
-              <MaterialCommunityIcons name="speedometer" size={28} color={UI_THEME.cyan} />
-            </View>
-            <Text style={styles.title}>Kilométrage</Text>
-            <Text style={styles.subtitle}>Suivi précis des distances et stats de conduite</Text>
-          </LinearGradient>
-        </ImageBackground>
+        <PremiumHeroBanner variant="km" height={140} alignCenter>
+          <View style={styles.heroIconWrap}>
+            <MaterialCommunityIcons name="speedometer" size={28} color={UI_THEME.cyan} />
+          </View>
+          <Text style={styles.title}>Kilométrage</Text>
+          <Text style={styles.subtitle}>Suivi précis des distances et stats de conduite</Text>
+        </PremiumHeroBanner>
 
         <View style={styles.grid}>
           {bubbles.map((b, idx) => (
@@ -191,22 +173,6 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'web' ? 24 : 100,
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'web' ? 16 : 8,
-  },
-  heroBanner: {
-    height: 140,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-    borderWidth: 0.5,
-    borderColor: UI_THEME.cyanBorder,
-  },
-  heroBannerImage: { resizeMode: 'cover' },
-  heroOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 12,
-    paddingHorizontal: 12,
   },
   heroIconWrap: {
     width: 54,

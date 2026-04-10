@@ -25,6 +25,7 @@ import { useKilometrage } from '../../context/KilometrageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useVehicle } from '../../context/VehicleContext';
 import { enhanceVehiclePhotoPremium } from '../../services/premiumVehiclePhoto';
+import { lookupVehicleByPlate } from '../../services/vehicleLookup';
 
 type VehicleBox = {
   x: number;
@@ -229,6 +230,8 @@ export default function ProfilScreen() {
   const [draft, setDraft] = useState<ProfileDraft>(buildDraft());
   const [isPhotoProcessing, setIsPhotoProcessing] = useState(false);
   const [vehiclesModalVisible, setVehiclesModalVisible] = useState(false);
+  const [newVehiclePlate, setNewVehiclePlate] = useState('');
+  const [plateLookupBusy, setPlateLookupBusy] = useState(false);
   const [saveNotice, setSaveNotice] = useState('');
   const sessionSlide = useState(new Animated.Value(-10))[0];
   const saveNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -349,11 +352,15 @@ export default function ProfilScreen() {
                   onPress: async () => {
                     const result = await deleteAccount();
                     if (!result.ok) {
-                      Alert.alert('Suppression impossible', result.error ?? 'Veuillez réessayer plus tard.');
+                      Alert.alert('Suppression impossible', result.error ?? 'Suppression serveur impossible.');
                       return;
                     }
-                    Alert.alert('Compte supprimé', 'Votre compte a été supprimé.');
-                    router.replace('/login');
+                    Alert.alert('Compte supprimé', 'Votre compte a été supprimé.', [
+                      {
+                        text: 'OK',
+                        onPress: () => router.replace('/login'),
+                      },
+                    ]);
                   },
                 },
               ]
@@ -362,6 +369,36 @@ export default function ProfilScreen() {
         },
       ]
     );
+  };
+
+  const handleLookupAndAddVehicle = async () => {
+    const plate = newVehiclePlate.trim();
+    if (!plate) {
+      Alert.alert('Immatriculation', "Saisissez d'abord une plaque.");
+      return;
+    }
+    if (plateLookupBusy) return;
+    setPlateLookupBusy(true);
+    try {
+      const found = await lookupVehicleByPlate(plate);
+      const model = (found?.fullModel || [found?.make, found?.model].filter(Boolean).join(' ')).trim();
+      const alias = (found?.model || model || 'Nouveau véhicule').trim();
+      addVehicle({
+        alias,
+        modele: model || '',
+        immat: plate.toUpperCase(),
+        prenom: vehicleData.prenom,
+        nom: vehicleData.nom,
+      });
+      setVehiclesModalVisible(false);
+      setNewVehiclePlate('');
+      Alert.alert(
+        'Véhicule ajouté',
+        model ? `Véhicule trouvé : ${model}` : 'Plaque enregistrée. Complétez le modèle si nécessaire.'
+      );
+    } finally {
+      setPlateLookupBusy(false);
+    }
   };
 
   return (
@@ -522,7 +559,7 @@ export default function ProfilScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.accountsModal}>
             <Text style={styles.accountsTitle}>MES VÉHICULES</Text>
-            <ScrollView style={styles.accountsList} contentContainerStyle={{ paddingBottom: 6 }}>
+            <ScrollView style={styles.accountsList} contentContainerStyle={{ paddingBottom: 6 }} scrollEnabled={false}>
               {vehicles.map((item) => {
                 const label = item.modele?.trim() || 'Véhicule';
                 const sub = item.immat?.trim() || 'Immatriculation non renseignée';
@@ -565,18 +602,22 @@ export default function ProfilScreen() {
 
             <TouchableOpacity
               style={styles.addAccountBtn}
-              onPress={() => {
-                addVehicle({
-                  alias: 'Nouveau véhicule',
-                  prenom: vehicleData.prenom,
-                  nom: vehicleData.nom,
-                });
-                setVehiclesModalVisible(false);
-                Alert.alert('Véhicule ajouté', 'Un nouveau véhicule a été créé. Complète ses informations dans le profil.');
-              }}
+              onPress={handleLookupAndAddVehicle}
+              disabled={plateLookupBusy}
             >
-              <Text style={styles.addAccountBtnText}>AJOUTER UN VÉHICULE</Text>
+              <Text style={styles.addAccountBtnText}>
+                {plateLookupBusy ? 'RECHERCHE...' : "TAPER VOTRE PLAQUE D'IMMATRICULATION"}
+              </Text>
             </TouchableOpacity>
+            <TextInput
+              style={styles.lookupPlateInput}
+              value={newVehiclePlate}
+              onChangeText={setNewVehiclePlate}
+              placeholder="AA-123-BB"
+              placeholderTextColor="#6b7b90"
+              autoCapitalize="characters"
+              editable={!plateLookupBusy}
+            />
 
             <TouchableOpacity style={styles.closeModalBtn} onPress={() => setVehiclesModalVisible(false)}>
               <Text style={styles.closeModalBtnText}>FERMER</Text>
@@ -799,6 +840,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   addAccountBtnText: { color: '#061018', fontWeight: '900', fontSize: 13, letterSpacing: 0.3 },
+  lookupPlateInput: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#e2e8f0',
+    backgroundColor: '#0b1322',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   closeModalBtn: { marginTop: 8, alignItems: 'center', paddingVertical: 8 },
   closeModalBtnText: { color: '#94a3b8', fontSize: 12, fontWeight: '700' },
 });

@@ -2,8 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
 const SESSION_KEY = '@garage_connect_session_v2';
+const REMEMBER_LOGIN_KEY = '@garage_connect_remember_login_v1';
 const USER_PREFIX = '@user';
 const MIGRATION_PREFIX = '@migration:user_scoped_v1';
+const UNAUTH_ALLOWED_KEYS = new Set<string>([REMEMBER_LOGIN_KEY, SESSION_KEY]);
 
 type SessionData = { userId?: string; login?: string };
 
@@ -42,24 +44,17 @@ export async function getCurrentUserId(): Promise<string | null> {
 
 export async function userGetItem(baseKey: string): Promise<string | null> {
   const userId = await getCurrentUserId();
-  if (!userId) return AsyncStorage.getItem(baseKey);
+  if (!userId) return UNAUTH_ALLOWED_KEYS.has(baseKey) ? AsyncStorage.getItem(baseKey) : null;
   const scoped = await AsyncStorage.getItem(scopedKey(userId, baseKey));
-  if (scoped != null) return scoped;
-
-  // Fallback/migration path: if data was written before user scope was available,
-  // promote legacy value to scoped key so each account keeps its own state.
-  const legacy = await AsyncStorage.getItem(baseKey);
-  if (legacy != null) {
-    await AsyncStorage.setItem(scopedKey(userId, baseKey), legacy);
-    return legacy;
-  }
-  return null;
+  return scoped;
 }
 
 export async function userSetItem(baseKey: string, value: string): Promise<void> {
   const userId = await getCurrentUserId();
   if (!userId) {
-    await AsyncStorage.setItem(baseKey, value);
+    if (UNAUTH_ALLOWED_KEYS.has(baseKey)) {
+      await AsyncStorage.setItem(baseKey, value);
+    }
     return;
   }
   await AsyncStorage.setItem(scopedKey(userId, baseKey), value);
@@ -68,7 +63,9 @@ export async function userSetItem(baseKey: string, value: string): Promise<void>
 export async function userRemoveItem(baseKey: string): Promise<void> {
   const userId = await getCurrentUserId();
   if (!userId) {
-    await AsyncStorage.removeItem(baseKey);
+    if (UNAUTH_ALLOWED_KEYS.has(baseKey)) {
+      await AsyncStorage.removeItem(baseKey);
+    }
     return;
   }
   await AsyncStorage.removeItem(scopedKey(userId, baseKey));

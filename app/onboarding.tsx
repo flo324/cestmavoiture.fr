@@ -1,19 +1,21 @@
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ONBOARDING_STATUS_KEY, type OnboardingStatus } from '../constants/onboarding';
 import { autoAttachManualForVehicle } from '../services/manualAutofill';
-import { autoAttachVehiclePhoto } from '../services/vehiclePhotoAutofill';
+import { lookupVehicleByPlate } from '../services/vehicleLookup';
 import { userSetItem } from '../services/userStorage';
 
 const STORAGE_KEY_VEHICLES = '@cestmavoiture_user_vehicles_v1';
 const STORAGE_KEY_ACTIVE = '@cestmavoiture_user_active_vehicle_v1';
 
-type StepId = 1 | 2 | 3;
-const STEP_COUNT = 3;
+type StepId = 1 | 2;
+const STEP_COUNT = 2;
+
+/** Sous-étapes à l’intérieur de l’étape véhicule : plaque → nom → modèle (+ enregistrer). */
+type VehicleUiStep = 1 | 2 | 3;
 
 const STEP_META: Record<StepId, { title: string; subtitle: string }> = {
   1: {
@@ -24,29 +26,38 @@ const STEP_META: Record<StepId, { title: string; subtitle: string }> = {
     title: 'Véhicule principal',
     subtitle: 'Les informations véhicule améliorent le suivi IA.',
   },
-  3: {
-    title: 'Premier document',
-    subtitle: 'Scannez maintenant ou continuez plus tard.',
-  },
 };
 
 export default function OnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const prenomRef = useRef<TextInput | null>(null);
+  const nomRef = useRef<TextInput | null>(null);
+  const immatRef = useRef<TextInput | null>(null);
+  const aliasRef = useRef<TextInput | null>(null);
+  const modeleRef = useRef<TextInput | null>(null);
 
   const [step, setStep] = useState<StepId>(1);
+  const [vehicleUiStep, setVehicleUiStep] = useState<VehicleUiStep>(1);
   const [busy, setBusy] = useState(false);
   const [prenom, setPrenom] = useState('');
   const [nom, setNom] = useState('');
   const [modele, setModele] = useState('');
   const [alias, setAlias] = useState('');
   const [immat, setImmat] = useState('');
-  const [photoUri, setPhotoUri] = useState('');
-  const [manualAutoStatus, setManualAutoStatus] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
-  const [photoAutoStatus, setPhotoAutoStatus] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
+  const [plateLookupStatus, setPlateLookupStatus] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
 
-  const canContinueVehicle = useMemo(() => alias.trim().length > 0 && modele.trim().length > 0, [alias, modele]);
+  const canContinueVehicle = useMemo(
+    () => immat.trim().length > 0 && alias.trim().length > 0 && modele.trim().length > 0,
+    [immat, alias, modele]
+  );
   const progressPct = useMemo(() => (step / STEP_COUNT) * 100, [step]);
+
+  const goToStep2AndFocusImmat = () => {
+    setStep(2);
+    setVehicleUiStep(1);
+    setTimeout(() => immatRef.current?.focus(), 280);
+  };
 
   const saveOnboardingStatus = async (skipped: boolean) => {
     const status: OnboardingStatus = {
@@ -57,20 +68,18 @@ export default function OnboardingScreen() {
     await userSetItem(ONBOARDING_STATUS_KEY, JSON.stringify(status));
   };
 
-  const saveVehicleProfile = async (
-    photoToPersist: string,
-    palette: { center: string; edge: string } = { center: '#334155', edge: '#0B1120' }
-  ) => {
+  const saveVehicleProfile = async () => {
     const id = 'default';
+    const palette = { center: '#334155', edge: '#0B1120' };
     const payload = [
       {
         id,
-        alias: alias.trim(),
+        alias: alias.trim() || modele.trim(),
         prenom: prenom.trim(),
         nom: nom.trim(),
         modele: modele.trim(),
         immat: immat.trim(),
-        photoUri: photoToPersist.trim(),
+        photoUri: '',
         photoBgCenter: palette.center,
         photoBgEdge: palette.edge,
       },
@@ -79,19 +88,46 @@ export default function OnboardingScreen() {
     await userSetItem(STORAGE_KEY_ACTIVE, id);
   };
 
-  const pickPhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permission.status !== 'granted') {
-      Alert.alert('Autorisation requise', 'Autorisez la galerie pour ajouter une photo du véhicule.');
+  /**
+   * Après la recherche (succès ou échec) : passage à l’écran « nom du véhicule ».
+   * Pas d’alerte « champs requis » ici.
+   */
+  const handleVehicleLookup = async () => {
+    const immatValue = immat.trim();
+    if (!immatValue) {
+      Alert.alert('Immatriculation requise', 'Renseignez votre immatriculation avant de lancer la recherche.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.92,
-    });
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-    setPhotoUri(result.assets[0].uri);
+    setPlateLookupStatus('loading');
+    const found = await lookupVehicleByPlate(immatValue);
+
+    if (!found) {
+      setPlateLookupStatus('failed');
+      return;
+    }
+
+    const nextModel = (found.fullModel || [found.make, found.model].filter(Boolean).join(' ')).trim();
+    if (!nextModel) {
+      setPlateLookupStatus('failed');
+      return;
+    }
+
+    setModele(nextModel);
+    if (!alias.trim()) {
+      setAlias(found.model?.trim() || nextModel);
+    }
+    setPlateLookupStatus('done');
+    goToVehicleStep2();
+  };
+
+  const goToVehicleStep2 = () => {
+    setVehicleUiStep(2);
+    setTimeout(() => aliasRef.current?.focus(), 220);
+  };
+
+  const goToVehicleStep3 = () => {
+    setVehicleUiStep(3);
+    setTimeout(() => modeleRef.current?.focus(), 220);
   };
 
   const finishAndGoHome = async () => {
@@ -106,174 +142,270 @@ export default function OnboardingScreen() {
   };
 
   const completeProfileFlow = async () => {
-    if (!canContinueVehicle) {
-      Alert.alert('Informations requises', 'Le nom du véhicule et le modèle sont requis pour continuer.');
-      return;
-    }
     if (busy) return;
     setBusy(true);
     try {
-      let profilePhotoUri = photoUri.trim();
-      let profilePalette = { center: '#334155', edge: '#0B1120' };
-      if (!profilePhotoUri) {
-        setPhotoAutoStatus('loading');
-        const autoPhoto = await autoAttachVehiclePhoto(modele.trim());
-        if (autoPhoto) {
-          profilePhotoUri = autoPhoto.photoUri;
-          profilePalette = autoPhoto.palette;
-          setPhotoUri(autoPhoto.photoUri);
-          setPhotoAutoStatus('done');
-        } else {
-          setPhotoAutoStatus('failed');
-        }
-      } else {
-        setPhotoAutoStatus('done');
-      }
-
-      await saveVehicleProfile(profilePhotoUri, profilePalette);
-      setManualAutoStatus('loading');
-      autoAttachManualForVehicle(modele.trim(), immat.trim())
-        .then((ok) => setManualAutoStatus(ok ? 'done' : 'failed'))
-        .catch(() => setManualAutoStatus('failed'));
+      await saveVehicleProfile();
+      autoAttachManualForVehicle(modele.trim(), immat.trim()).catch(() => {});
       await saveOnboardingStatus(false);
-      setStep(3);
+      router.replace('/splash');
     } finally {
       setBusy(false);
     }
   };
 
+  /** Alerte « champs requis » uniquement au clic sur Enregistrer. */
+  const onPressEnregistrer = () => {
+    if (busy) return;
+    if (!immat.trim() || !alias.trim() || !modele.trim()) {
+      Alert.alert('Champs requis', "Vous devez d'abord remplir les champs requis.");
+      return;
+    }
+    completeProfileFlow();
+  };
+
+  const keyboardOffset = insets.top + 12;
+
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
-    >
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 22 }]}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+    <View style={styles.shell}>
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? keyboardOffset : 0}
       >
-        <View style={styles.topRow}>
-          <Text style={styles.title}>Configuration initiale</Text>
-          <TouchableOpacity onPress={finishAndGoHome} disabled={busy}>
-            <Text style={styles.laterText}>Plus tard</Text>
-          </TouchableOpacity>
-        </View>
+        <View
+          style={[
+            styles.page,
+            {
+              paddingTop: insets.top + 14,
+              paddingBottom: insets.bottom + 10,
+              paddingHorizontal: 20,
+            },
+          ]}
+        >
+          <View style={styles.topBlock}>
+            <View style={styles.topRow}>
+              <Text style={styles.title}>Configuration initiale</Text>
+              <TouchableOpacity onPress={finishAndGoHome} disabled={busy}>
+                <Text style={styles.laterText}>Plus tard</Text>
+              </TouchableOpacity>
+            </View>
 
-        <View style={styles.progressWrap}>
-          <View style={styles.progressHeadRow}>
-            <Text style={styles.progressLabel}>Étape {step} / {STEP_COUNT}</Text>
-            <Text style={styles.progressPercent}>{Math.round(progressPct)}%</Text>
+            <View style={styles.progressWrap}>
+              <View style={styles.progressHeadRow}>
+                <Text style={styles.progressLabel}>
+                  Étape {step} / {STEP_COUNT}
+                </Text>
+                <Text style={styles.progressPercent}>{Math.round(progressPct)}%</Text>
+              </View>
+              <View style={styles.progressBarTrack}>
+                <View style={[styles.progressBarFill, { width: `${progressPct}%` }]} />
+              </View>
+              <View style={styles.stepsRow}>
+                {[1, 2].map((item) => {
+                  const id = item as StepId;
+                  const active = step === id;
+                  const done = step > id;
+                  return (
+                    <View key={id} style={styles.stepItem}>
+                      <View style={[styles.stepDot, active && styles.stepDotActive, done && styles.stepDotDone]}>
+                        <Text style={[styles.stepDotText, (active || done) && styles.stepDotTextActive]}>{id}</Text>
+                      </View>
+                      <Text style={[styles.stepText, (active || done) && styles.stepTextActive]}>{STEP_META[id].title}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.heroCard}>
+              <Text style={styles.heroTitle}>{STEP_META[step].title}</Text>
+              <Text style={styles.heroSub}>{STEP_META[step].subtitle}</Text>
+            </View>
           </View>
-          <View style={styles.progressBarTrack}>
-            <View style={[styles.progressBarFill, { width: `${progressPct}%` }]} />
-          </View>
-          <View style={styles.stepsRow}>
-            {[1, 2, 3].map((item) => {
-              const id = item as StepId;
-              const active = step === id;
-              const done = step > id;
-              return (
-                <View key={id} style={styles.stepItem}>
-                  <View style={[styles.stepDot, active && styles.stepDotActive, done && styles.stepDotDone]}>
-                    <Text style={[styles.stepDotText, (active || done) && styles.stepDotTextActive]}>{id}</Text>
-                  </View>
-                  <Text style={[styles.stepText, (active || done) && styles.stepTextActive]}>{STEP_META[id].title}</Text>
+
+          <View style={styles.scene}>
+            <View style={styles.cardShell}>
+              {step === 1 ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Informations personnelles</Text>
+                  <Text style={styles.helper}>Ces champs restent facultatifs, vous pourrez les modifier ensuite.</Text>
+                  <Text style={styles.label}>Prénom (optionnel)</Text>
+                  <TextInput
+                    ref={prenomRef}
+                    style={styles.input}
+                    value={prenom}
+                    onChangeText={setPrenom}
+                    placeholder="Prénom"
+                    placeholderTextColor="#64748b"
+                    returnKeyType="next"
+                    blurOnSubmit={false}
+                    onSubmitEditing={() => nomRef.current?.focus()}
+                  />
+                  <Text style={styles.label}>Nom (optionnel)</Text>
+                  <TextInput
+                    ref={nomRef}
+                    style={styles.input}
+                    value={nom}
+                    onChangeText={setNom}
+                    placeholder="Nom"
+                    placeholderTextColor="#64748b"
+                    returnKeyType="done"
+                    onSubmitEditing={goToStep2AndFocusImmat}
+                  />
+                  <TouchableOpacity style={styles.btn} onPress={goToStep2AndFocusImmat}>
+                    <Text style={styles.btnText}>Continuer</Text>
+                  </TouchableOpacity>
                 </View>
-              );
-            })}
+              ) : null}
+
+              {step === 2 ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Données véhicule</Text>
+
+                  {vehicleUiStep === 1 ? (
+                    <>
+                      <Text style={styles.helper}>Saisissez l’immatriculation, puis lancez la recherche du modèle.</Text>
+                      <Text style={styles.label}>Immatriculation (requis)</Text>
+                      <TextInput
+                        ref={immatRef}
+                        style={styles.input}
+                        value={immat}
+                        onChangeText={(value) => {
+                          setImmat(value);
+                          if (plateLookupStatus !== 'idle') setPlateLookupStatus('idle');
+                        }}
+                        placeholder="AA-123-BB"
+                        autoCapitalize="characters"
+                        placeholderTextColor="#64748b"
+                        returnKeyType="done"
+                        onSubmitEditing={() => void handleVehicleLookup()}
+                      />
+                      <TouchableOpacity
+                        style={[styles.lookupBtn, plateLookupStatus === 'loading' ? styles.lookupBtnDisabled : null]}
+                        onPress={() => void handleVehicleLookup()}
+                        disabled={plateLookupStatus === 'loading'}
+                      >
+                        <Text style={styles.lookupBtnText}>{plateLookupStatus === 'loading' ? 'Recherche...' : 'Rechercher le modèle'}</Text>
+                      </TouchableOpacity>
+                      {plateLookupStatus === 'failed' ? (
+                        <>
+                          <Text style={styles.lookupHintKo}>
+                            Recherche indisponible pour cette plaque. Poursuivez la saisie manuelle à l’étape suivante. Token optionnel : EXPO_PUBLIC_API_PLAQUE_TOKEN.
+                          </Text>
+                          <TouchableOpacity style={styles.btn} onPress={goToVehicleStep2}>
+                            <Text style={styles.btnText}>Continuer la saisie</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {vehicleUiStep === 2 ? (
+                    <>
+                      <Text style={styles.helper}>Nom affiché pour votre véhicule (vous pourrez le modifier plus tard).</Text>
+                      <Text style={styles.label}>Nom du véhicule (requis)</Text>
+                      <TextInput
+                        ref={aliasRef}
+                        style={styles.input}
+                        value={alias}
+                        onChangeText={setAlias}
+                        placeholder="Ex: 307, Clio..."
+                        placeholderTextColor="#64748b"
+                        returnKeyType="next"
+                        blurOnSubmit={false}
+                        onSubmitEditing={goToVehicleStep3}
+                      />
+                      <TouchableOpacity style={styles.btn} onPress={goToVehicleStep3}>
+                        <Text style={styles.btnText}>Continuer</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.backLink}
+                        onPress={() => {
+                          setVehicleUiStep(1);
+                          setPlateLookupStatus('idle');
+                        }}
+                      >
+                        <Text style={styles.backLinkText}>← Modifier l’immatriculation</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : null}
+
+                  {vehicleUiStep === 3 ? (
+                    <>
+                      <Text style={styles.helper}>Modèle complet (marque + version si besoin).</Text>
+                      <Text style={styles.label}>Modèle du véhicule (requis)</Text>
+                      <TextInput
+                        ref={modeleRef}
+                        style={styles.input}
+                        value={modele}
+                        onChangeText={setModele}
+                        placeholder="Ex: Peugeot 307"
+                        placeholderTextColor="#64748b"
+                        returnKeyType="done"
+                        blurOnSubmit
+                        onSubmitEditing={() => {
+                          if (busy) return;
+                          if (canContinueVehicle) {
+                            void completeProfileFlow();
+                          }
+                        }}
+                      />
+
+                      <View style={styles.row}>
+                        <TouchableOpacity
+                          style={styles.secondaryBtn}
+                          onPress={() => {
+                            setVehicleUiStep(2);
+                            setTimeout(() => aliasRef.current?.focus(), 100);
+                          }}
+                        >
+                          <Text style={styles.secondaryBtnText}>Retour</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.btn, !canContinueVehicle && !busy && styles.btnMuted]}
+                          onPress={onPressEnregistrer}
+                          disabled={busy}
+                        >
+                          <Text style={styles.btnText}>Enregistrer</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
           </View>
         </View>
-
-        <View style={styles.heroCard}>
-          <Text style={styles.heroTitle}>{STEP_META[step].title}</Text>
-          <Text style={styles.heroSub}>{STEP_META[step].subtitle}</Text>
-        </View>
-
-        {step === 1 ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Informations personnelles</Text>
-            <Text style={styles.helper}>Ces champs restent facultatifs, vous pourrez les modifier ensuite.</Text>
-            <Text style={styles.label}>Prénom (optionnel)</Text>
-            <TextInput style={styles.input} value={prenom} onChangeText={setPrenom} placeholder="Prénom" placeholderTextColor="#64748b" />
-            <Text style={styles.label}>Nom (optionnel)</Text>
-            <TextInput style={styles.input} value={nom} onChangeText={setNom} placeholder="Nom" placeholderTextColor="#64748b" />
-            <TouchableOpacity style={styles.btn} onPress={() => setStep(2)}>
-              <Text style={styles.btnText}>Continuer</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        {step === 2 ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Données véhicule</Text>
-            <Text style={styles.helper}>Le nom du véhicule et le modèle sont requis pour activer un suivi pertinent.</Text>
-            <Text style={styles.label}>Nom du véhicule (requis)</Text>
-            <TextInput style={styles.input} value={alias} onChangeText={setAlias} placeholder="Ex: 307, Clio..." placeholderTextColor="#64748b" />
-            <Text style={styles.label}>Modèle du véhicule (requis)</Text>
-            <TextInput style={styles.input} value={modele} onChangeText={setModele} placeholder="Ex: Peugeot 307" placeholderTextColor="#64748b" />
-            <Text style={styles.label}>Immatriculation (optionnel)</Text>
-            <TextInput style={styles.input} value={immat} onChangeText={setImmat} placeholder="AA-123-BB" placeholderTextColor="#64748b" />
-            <Text style={styles.label}>Photo (optionnel)</Text>
-            <TouchableOpacity style={styles.photoBtn} onPress={pickPhoto} activeOpacity={0.85}>
-              {photoUri ? <Image source={{ uri: photoUri }} style={styles.preview} resizeMode="cover" /> : <Text style={styles.photoText}>Choisir une photo</Text>}
-            </TouchableOpacity>
-
-            <View style={styles.row}>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => setStep(1)}>
-                <Text style={styles.secondaryBtnText}>Retour</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, !canContinueVehicle && styles.btnDisabled]} onPress={completeProfileFlow} disabled={!canContinueVehicle || busy}>
-                <Text style={styles.btnText}>Enregistrer</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
-
-        {step === 3 ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Démarrage intelligent</Text>
-            <Text style={styles.helper}>Scannez un premier document pour alimenter votre assistant véhicule dès maintenant.</Text>
-            <View style={styles.manualStatusCard}>
-              <Text style={styles.manualStatusTitle}>Photo véhicule automatique</Text>
-              <Text style={styles.manualStatusText}>
-                {photoAutoStatus === 'loading'
-                  ? 'Recherche, détourage et intégration premium de la photo en cours...'
-                  : photoAutoStatus === 'done'
-                    ? 'Photo du modèle optimisée (fond retiré si disponible) et prête dans le profil.'
-                    : photoAutoStatus === 'failed'
-                      ? 'Photo auto non trouvée. Vous pourrez en choisir une dans Profil.'
-                      : 'Une photo modèle sera ajoutée et optimisée automatiquement si aucune photo n est fournie.'}
-              </Text>
-            </View>
-            <View style={styles.manualStatusCard}>
-              <Text style={styles.manualStatusTitle}>Mode d&apos;emploi automatique</Text>
-              <Text style={styles.manualStatusText}>
-                {manualAutoStatus === 'loading'
-                  ? 'Recherche et téléchargement du PDF en cours...'
-                  : manualAutoStatus === 'done'
-                    ? 'PDF du mode d emploi prêt dans la case Entretien > Mode emploi.'
-                    : manualAutoStatus === 'failed'
-                      ? 'Téléchargement auto non trouvé. Vous pourrez le lancer manuellement dans Entretien.'
-                      : 'Le téléchargement automatique démarrera après validation du véhicule.'}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.btn} onPress={() => router.replace('/(tabs)/scan')}>
-              <Text style={styles.btnText}>Scanner mon premier document</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.switchBtn} onPress={() => router.replace('/splash')}>
-              <Text style={styles.switchBtnText}>Je le ferai plus tard</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0b0f14' },
-  scroll: { paddingHorizontal: 20 },
+  shell: { flex: 1, backgroundColor: '#0b0f14' },
+  kav: { flex: 1 },
+  page: { flex: 1 },
+  topBlock: { flexShrink: 0 },
+  scene: {
+    flex: 1,
+    minHeight: 0,
+    marginTop: 8,
+  },
+  cardShell: {
+    flex: 1,
+    minHeight: 0,
+    marginTop: 0,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.35,
+        shadowRadius: 16,
+      },
+      android: { elevation: 10 },
+    }),
+  },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { color: '#e2e8f0', fontWeight: '900', fontSize: 18, letterSpacing: 0.2 },
   laterText: { color: '#94a3b8', fontWeight: '700', fontSize: 12 },
@@ -317,11 +449,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 14,
     padding: 14,
-    marginBottom: 8,
+    marginBottom: 4,
+    zIndex: 1,
   },
   heroTitle: { color: '#e2e8f0', fontWeight: '800', fontSize: 15 },
   heroSub: { color: '#94a3b8', marginTop: 5, lineHeight: 19, fontSize: 12 },
-  card: { backgroundColor: '#111827', borderRadius: 14, borderWidth: 1, borderColor: '#1f2937', padding: 16, marginTop: 8 },
+  card: {
+    backgroundColor: '#111827',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    padding: 16,
+  },
   cardTitle: { color: '#e2e8f0', fontSize: 17, fontWeight: '800' },
   helper: { color: '#94a3b8', marginTop: 8, marginBottom: 10, lineHeight: 20 },
   label: { color: '#94a3b8', fontSize: 11, fontWeight: '700', marginTop: 4, marginBottom: 6 },
@@ -335,44 +474,52 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
     fontSize: 15,
   },
-  photoBtn: {
-    height: 120,
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  photoText: { color: '#94a3b8', fontWeight: '700' },
-  preview: { width: '100%', height: '100%' },
   row: { flexDirection: 'row', gap: 8, marginTop: 14 },
   btn: { flex: 1, marginTop: 14, backgroundColor: '#00E9F5', borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
-  btnDisabled: { opacity: 0.6 },
+  btnMuted: { opacity: 0.55 },
   btnText: { color: '#061018', fontWeight: '900', fontSize: 14, letterSpacing: 0.3 },
-  secondaryBtn: { flex: 1, marginTop: 14, borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: '#334155', backgroundColor: '#0f172a' },
-  secondaryBtnText: { color: '#94a3b8', fontWeight: '800', fontSize: 13 },
-  switchBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 6 },
-  switchBtnText: { color: '#94a3b8', fontSize: 12, fontWeight: '700' },
-  manualStatusCard: {
-    marginTop: 10,
-    borderRadius: 10,
-    padding: 10,
+  secondaryBtn: {
+    flex: 1,
+    marginTop: 14,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#334155',
     backgroundColor: '#0f172a',
   },
-  manualStatusTitle: {
-    color: '#cfe7ff',
-    fontSize: 12,
-    fontWeight: '800',
-    marginBottom: 4,
+  secondaryBtnText: { color: '#94a3b8', fontWeight: '800', fontSize: 13 },
+  backLink: { marginTop: 14, alignSelf: 'center', paddingVertical: 8 },
+  backLinkText: { color: '#67e8f9', fontSize: 13, fontWeight: '700' },
+  lookupBtn: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1d4ed8',
+    backgroundColor: 'rgba(29,78,216,0.18)',
+    paddingVertical: 10,
+    alignItems: 'center',
   },
-  manualStatusText: {
-    color: '#94a3b8',
+  lookupBtnDisabled: {
+    opacity: 0.7,
+  },
+  lookupBtnText: {
+    color: '#bfdbfe',
+    fontWeight: '800',
     fontSize: 12,
-    lineHeight: 18,
+    letterSpacing: 0.2,
+  },
+  lookupHintOk: {
+    marginTop: 8,
+    color: '#86efac',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  lookupHintKo: {
+    marginTop: 8,
+    color: '#fca5a5',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
   },
 });
-

@@ -6,8 +6,9 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Car, CreditCard, FileText, FileWarning, IdCard, Plus, ShieldCheck, Wrench } from 'lucide-react-native';
-import { ActivityIndicator, Alert, FlatList, ImageBackground, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
 import { normalizeDocumentCapture } from '../../services/documentScan';
 import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
@@ -18,7 +19,7 @@ type DocFolder = {
   titre: string;
   subtitle: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  route?: '/scan_permis' | '/scan_cg';
+  route?: '/scan_permis' | '/scan_cg' | '/ct';
   type: string;
   photoUri?: string;
   isDefault?: boolean;
@@ -52,6 +53,15 @@ const defaultFolders: DocFolder[] = [
     icon: 'file-document-outline',
     route: '/scan_cg',
     type: 'Carte Grise',
+    isDefault: true,
+  },
+  {
+    id: 'ct-doc',
+    titre: 'CT',
+    subtitle: 'Contrôle technique',
+    icon: 'car-wrench',
+    route: '/ct',
+    type: 'CT',
     isDefault: true,
   },
   {
@@ -344,11 +354,13 @@ export default function DocsScreen() {
           if (Array.isArray(parsed) && parsed.length > 0) {
             const hasPermis = parsed.some((f) => f.id === 'permis');
             const hasCg = parsed.some((f) => f.id === 'carte-grise');
+            const hasCt = parsed.some((f) => f.id === 'ct-doc');
             const hasBilan = parsed.some((f) => f.id === 'bilan-vehicule');
             const merged = [...parsed];
             if (!hasPermis) merged.unshift(defaultFolders[0]);
             if (!hasCg) merged.splice(1, 0, defaultFolders[1]);
-            if (!hasBilan) merged.splice(2, 0, defaultFolders[2]);
+            if (!hasCt) merged.splice(2, 0, defaultFolders[2]);
+            if (!hasBilan) merged.splice(3, 0, defaultFolders[3]);
             setFolders(merged);
           }
         }
@@ -483,20 +495,10 @@ export default function DocsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
-      <ImageBackground
-        source={{ uri: 'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=1600&q=70' }}
-        style={styles.heroBanner}
-        imageStyle={styles.heroBannerImage}
-      >
-        <LinearGradient
-          colors={['rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)', '#0b0f14']}
-          locations={[0, 0.56, 1]}
-          style={styles.heroOverlay}
-        >
-          <Text style={styles.heroTitle}>Documents juridiques</Text>
-          <Text style={styles.heroSub}>Centralisez, vérifiez et accédez à vos dossiers en un clic</Text>
-        </LinearGradient>
-      </ImageBackground>
+      <PremiumHeroBanner variant="docs" height={124} alignCenter style={styles.heroBanner}>
+        <Text style={styles.heroTitle}>Documents juridiques</Text>
+        <Text style={styles.heroSub}>Centralisez, vérifiez et accédez à vos dossiers en un clic</Text>
+      </PremiumHeroBanner>
 
       <FlatList
         data={folders}
@@ -730,15 +732,8 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '800', color: UI_THEME.textSecondary },
   heroBanner: {
     marginHorizontal: 18,
-    height: 124,
-    borderRadius: 16,
-    overflow: 'hidden',
     marginBottom: 10,
-    borderWidth: 0.5,
-    borderColor: UI_THEME.cyanBorder,
   },
-  heroBannerImage: { resizeMode: 'cover' },
-  heroOverlay: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 14, paddingBottom: 12 },
   heroTitle: { color: UI_THEME.textPrimary, fontSize: 17, fontWeight: '800' },
   heroSub: { color: UI_THEME.textMuted, fontSize: 11, marginTop: 3 },
   folderCard: {

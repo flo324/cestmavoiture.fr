@@ -31,6 +31,7 @@ const DOC_TYPES = ['Permis', 'Carte Grise', 'Assurance', 'CT', 'Facture', 'Autre
 const STORAGE_DOCS = '@cestmavoiture_docs_v1';
 const STORAGE_FACTURES = '@mes_factures_v5';
 const STORAGE_ENTRETIEN = '@ma_voiture_entretien_modules_v1';
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'] as const;
 
 type Step = 'idle' | 'framing' | 'preview' | 'analyzing' | 'pick' | 'intake';
 
@@ -110,6 +111,74 @@ function clampId(n: unknown): number {
   return Math.min(5, Math.max(1, Math.round(x)));
 }
 
+type GeminiClassifyResult = {
+  suggestedId: number;
+  reason: string;
+  extractedText?: string;
+  confidence?: number;
+};
+
+const KEYWORDS_BY_CASE: Record<number, string[]> = {
+  1: [
+    'revision', 'vidange', 'filtre', 'pneus', 'paralle', 'frein', 'plaquette', 'amortisseur',
+    'batterie', 'atelier', 'garage', 'ordre de reparation', 'entretien', 'main d oeuvre',
+  ],
+  2: [
+    'certificat d immatriculation', 'carte grise', 'permis de conduire', 'attestation d assurance',
+    'assurance', 'numero de formule', 'siv', 'prefecture', 'carte verte',
+  ],
+  3: [
+    'diagnostic', 'code erreur', 'code defaut', 'obd', 'voyant moteur', 'abs', 'esp', 'airbag',
+    'fap', 'adblue', 'sonde lambda', 'calculateur', 'panne',
+  ],
+  4: [
+    'facture', 'ttc', 'tva', 'total', 'reglement', 'peage', 'parking', 'lavage', 'carburant',
+    'franchise', 'sinistre', 'depense',
+  ],
+  5: [
+    'controle technique', 'proces verbal', 'pv', 'contre visite', 'centre de controle',
+    'resultat favorable', 'resultat defavorable', 'vehicule conforme',
+  ],
+};
+
+function normalizeText(raw: string): string {
+  return raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function keywordScoring(text: string): { suggestedId: number; score: number; reason: string } {
+  const hay = normalizeText(text);
+  let bestId = 2;
+  let bestScore = 0;
+  let bestKeyword = 'document';
+  for (const [idRaw, keywords] of Object.entries(KEYWORDS_BY_CASE)) {
+    const id = Number(idRaw);
+    let score = 0;
+    let first = '';
+    for (const kw of keywords) {
+      if (hay.includes(normalizeText(kw))) {
+        score += 1;
+        if (!first) first = kw;
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = id;
+      bestKeyword = first || 'mot-clé détecté';
+    }
+  }
+  return {
+    suggestedId: clampId(bestId),
+    score: bestScore,
+    reason: bestScore > 0 ? `Mots-clés détectés: ${bestKeyword}` : 'Texte peu exploitable, catégorie par défaut.',
+  };
+}
+
 const CLASSIFY_PROMPT = `
 Tu es un expert en documents automobiles français. Tu reçois UNE photo (document, écran, tableau de bord, papier).
 
@@ -141,18 +210,13 @@ RÈGLES :
 - Photo de tableau de bord avec voyants allumés ou message défaut → 3.
 
 Réponds UNIQUEMENT ce JSON strict, sans markdown :
-{"suggestedId":1,"reason":"une phrase en français qui cite 1 ou 2 mots-clés que tu as réellement repérés sur l'image, ou 'document peu lisible' si besoin"}
+{"suggestedId":1,"reason":"une phrase en français","extractedText":"mots importants lus sur le document","confidence":0.0}
 `.trim();
 
-async function classifyWithGemini(base64: string): Promise<{ suggestedId: number; reason: string }> {
+async function classifyWithGeminiModel(model: string, base64: string): Promise<GeminiClassifyResult> {
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
-  if (!apiKey) {
-    return { suggestedId: 2, reason: 'Clé API absente — Documents proposés par défaut.' };
-  }
-  const prompt = CLASSIFY_PROMPT;
-
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -166,7 +230,7 @@ async function classifyWithGemini(base64: string): Promise<{ suggestedId: number
             ],
           },
         ],
-        generationConfig: { temperature: 0.15, maxOutputTokens: 256 },
+        generationConfig: { temperature: 0.05, maxOutputTokens: 520 },
       }),
     }
   );
@@ -176,10 +240,59 @@ async function classifyWithGemini(base64: string): Promise<{ suggestedId: number
   const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
   const match = cleaned.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('no json');
-  const parsed = JSON.parse(match[0]) as { suggestedId?: unknown; reason?: unknown };
+  const parsed = JSON.parse(match[0]) as {
+    suggestedId?: unknown;
+    reason?: unknown;
+    extractedText?: unknown;
+    confidence?: unknown;
+  };
   return {
     suggestedId: clampId(parsed.suggestedId),
     reason: String(parsed.reason ?? 'Suggestion automatique.').slice(0, 280),
+    extractedText: String(parsed.extractedText ?? '').slice(0, 1800),
+    confidence: Math.max(0, Math.min(1, Number(parsed.confidence ?? 0))),
+  };
+}
+
+async function classifyWithGemini(base64: string): Promise<{ suggestedId: number; reason: string }> {
+  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  if (!apiKey) {
+    return { suggestedId: 2, reason: 'Clé API absente — Documents proposés par défaut.' };
+  }
+
+  let best: GeminiClassifyResult | null = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      const out = await classifyWithGeminiModel(model, base64);
+      best = out;
+      // si confiance élevée on garde directement
+      if ((out.confidence ?? 0) >= 0.72) break;
+    } catch {
+      // tente le modèle suivant
+    }
+  }
+  if (!best) throw new Error('classification failed');
+
+  const combinedText = `${best.extractedText ?? ''} ${best.reason ?? ''}`.trim();
+  const keyword = keywordScoring(combinedText);
+  const aiConfidence = best.confidence ?? 0;
+
+  // Fusion robuste: priorité aux mots-clés forts, sinon décision IA.
+  const finalId =
+    keyword.score >= 2
+      ? keyword.suggestedId
+      : aiConfidence >= 0.55
+        ? best.suggestedId
+        : keyword.suggestedId;
+
+  const reasonParts = [
+    `IA: ${best.reason || 'analyse automatique'}`,
+    keyword.score > 0 ? keyword.reason : '',
+  ].filter(Boolean);
+
+  return {
+    suggestedId: clampId(finalId),
+    reason: reasonParts.join(' • ').slice(0, 280),
   };
 }
 
@@ -483,6 +596,7 @@ export default function ScanScreen() {
         style={styles.intakeScroll}
         contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
         keyboardShouldPersistTaps="handled"
+        scrollEnabled={false}
       >
         <Text style={styles.intakeHeading}>NOUVEAU DOSSIER — {c.short}</Text>
         <Text style={styles.intakeHint}>Complétez la fiche puis enregistrez le dossier dans cette case.</Text>
@@ -490,7 +604,7 @@ export default function ScanScreen() {
         {c.key === 'documents' && (
           <>
             <Text style={styles.label}>Type de document</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} scrollEnabled={false}>
               {DOC_TYPES.map((t) => (
                 <TouchableOpacity
                   key={t}
@@ -652,7 +766,7 @@ export default function ScanScreen() {
         )}
 
         {step === 'preview' && uri ? (
-          <ScrollView contentContainerStyle={styles.previewBox} keyboardDismissMode="on-drag">
+          <ScrollView contentContainerStyle={styles.previewBox} keyboardDismissMode="on-drag" scrollEnabled={false}>
             <Text style={styles.title}>Aperçu</Text>
             <Image source={{ uri }} style={styles.previewImg} />
             <TouchableOpacity style={styles.primaryBtn} onPress={runAnalysis} activeOpacity={0.9}>
@@ -687,6 +801,7 @@ export default function ScanScreen() {
                 style={{ maxHeight: H * 0.36 }}
                 contentContainerStyle={{ paddingBottom: 4 }}
                 keyboardDismissMode="on-drag"
+                scrollEnabled={false}
               >
                 {SCAN_CASES.map((c) => {
                   const sel = selectedId === c.id;

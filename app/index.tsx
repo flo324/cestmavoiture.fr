@@ -1,6 +1,7 @@
 import { Redirect } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { ONBOARDING_STATUS_KEY, type OnboardingStatus } from '../constants/onboarding';
 import { GarageConnectLogo } from '../components/GarageConnectLogo';
@@ -47,8 +48,9 @@ export default function GateScreen() {
   if (!isReady || (isLoggedIn && !onboardingChecked)) {
     return (
       <View style={styles.boot}>
-        <GarageConnectLogo size="lg" />
-        <ActivityIndicator color="#00E9F5" style={styles.spinner} />
+        <Animated.View entering={FadeIn.duration(280)}>
+          <GarageConnectLogo size="lg" animated={false} />
+        </Animated.View>
       </View>
     );
   }
@@ -71,5 +73,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  spinner: { marginTop: 28 },
 });

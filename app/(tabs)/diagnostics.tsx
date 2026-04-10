@@ -1,10 +1,10 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Image, ImageBackground, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { STORAGE_DIAG_SCAN } from '../../constants/scanConstants';
+import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
 import { userGetItem } from '../../services/userStorage';
 
@@ -65,19 +65,13 @@ export default function DiagnosticsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
-      <ImageBackground
-        source={{ uri: 'https://images.unsplash.com/photo-1486754735734-325b5831c3ad?auto=format&fit=crop&w=1600&q=70' }}
-        style={styles.heroBanner}
-        imageStyle={styles.heroBannerImage}
-      >
-        <LinearGradient colors={['rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)', UI_THEME.bg]} locations={[0, 0.56, 1]} style={styles.heroOverlay}>
-          <View style={styles.heroIconWrap}>
-            <MaterialCommunityIcons name="alert-decagram-outline" size={28} color={UI_THEME.cyan} />
-          </View>
-          <Text style={styles.headerTitle}>Diagnostics et alertes</Text>
-          <Text style={styles.heroSubtitle}>Surveillez les alertes et priorisez les actions importantes</Text>
-        </LinearGradient>
-      </ImageBackground>
+      <PremiumHeroBanner variant="diagnostics" height={140} alignCenter style={styles.heroBanner}>
+        <View style={styles.heroIconWrap}>
+          <MaterialCommunityIcons name="alert-decagram-outline" size={28} color={UI_THEME.cyan} />
+        </View>
+        <Text style={styles.headerTitle}>Diagnostics et alertes</Text>
+        <Text style={styles.heroSubtitle}>Surveillez les alertes et priorisez les actions importantes</Text>
+      </PremiumHeroBanner>
 
       <View style={styles.listWrap}>
         {folders.map((folder) => (
@@ -131,21 +125,8 @@ export default function DiagnosticsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: UI_THEME.bg },
   heroBanner: {
-    height: 140,
     marginHorizontal: 16,
     marginTop: 0,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 0.5,
-    borderColor: UI_THEME.cyanBorder,
-  },
-  heroBannerImage: { resizeMode: 'cover' },
-  heroOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 12,
-    paddingHorizontal: 12,
   },
   heroIconWrap: {
     width: 52,

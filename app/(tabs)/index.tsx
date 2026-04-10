@@ -2,7 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { BarChart3, ClipboardList, FileText, PenTool, Settings } from 'lucide-react-native';
+import { BarChart3, ClipboardList, FileText, MapPin, PenTool, Settings } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,7 +20,7 @@ const categories = [
   { id: 2, title: 'DOCUMENTS DU VÉHICULE', description: 'Cartes grises, assurances...', icon: FileText, color: '#48BB78' },
   { id: 3, title: 'DIAGNOSTICS & ALERTES', description: 'Consultez les codes d\'erreur OBD-II.', icon: PenTool, color: '#ED8936' },
   { id: 4, title: 'FRAIS & DÉPENSES', description: 'Suivez votre budget auto.', icon: BarChart3, color: '#805AD5' },
-  { id: 5, title: 'CT', description: 'Contrôle technique et échéance', icon: FileText, color: '#F56565' },
+  { id: 5, title: 'GPS', description: 'Trajets intelligents et position live', icon: MapPin, color: '#F56565' },
   { id: 6, title: 'KM', description: 'Statistiques synchronisées', icon: Settings, color: '#00F2FF' },
 ];
 
@@ -69,6 +69,21 @@ function formatFr(d: Date): string {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
+function extractDepartementFromImmat(immat: string | undefined): string {
+  const raw = String(immat ?? '').toUpperCase().trim();
+  if (!raw) return '--';
+  const cleaned = raw.replace(/\s+/g, ' ').trim();
+  const m = cleaned.match(/(\d{2,3})$/);
+  if (!m) return '--';
+  const dep = m[1];
+  if (dep.length === 2) return dep;
+  if (dep.length === 3 && dep.startsWith('0')) return dep.slice(1);
+  return dep;
+}
+
+const MARSEILLE_ESCUTCHEON_URI =
+  'https://commons.wikimedia.org/wiki/Special:FilePath/Blason-Marseille.png';
+
 function ctUrgencyColor(daysLeft: number): string {
   if (daysLeft < 0) return '#C53030';
   if (daysLeft < 30) return '#C53030';
@@ -105,6 +120,7 @@ export default function HomeScreen() {
   const premiumPulse = useRef(new Animated.Value(1)).current;
   const brandRollAnim = useRef(new Animated.Value(0)).current;
   const screenIntro = useRef(new Animated.Value(0)).current;
+  const gpsPulse = useRef(new Animated.Value(1)).current;
 
   const kmStats = useMemo(() => {
     const total = parseOdometerKm(kmCtx?.km);
@@ -114,6 +130,8 @@ export default function HomeScreen() {
     const an = readNumericStat(kmCtx, 'kmAn');
     return { total, jour, semaine, mois, an };
   }, [kmCtx]);
+  const immatDisplay = useMemo(() => (vehicleData.immat || '-').toUpperCase(), [vehicleData.immat]);
+  const depCode = useMemo(() => extractDepartementFromImmat(vehicleData.immat), [vehicleData.immat]);
 
   useFocusEffect(
     useCallback(() => {
@@ -199,7 +217,7 @@ export default function HomeScreen() {
         router.push('/factures');
         break;
       case 5:
-        router.push('/ct');
+        router.push('/location');
         break;
       case 6:
         router.push('/km');
@@ -275,6 +293,27 @@ export default function HomeScreen() {
     loop.start();
     return () => loop.stop();
   }, [premiumPulse]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(gpsPulse, {
+          toValue: 1.12,
+          duration: 760,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(gpsPulse, {
+          toValue: 1,
+          duration: 760,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [gpsPulse]);
 
   useEffect(() => {
     marqueeAnim.setValue(0);
@@ -490,8 +529,20 @@ export default function HomeScreen() {
             </Text>
             <Text style={[styles.vehicleCardModel, isLight ? { color: '#334155' } : null]}>{vehicleData.modele || '-'}</Text>
             <View style={[styles.immatBadge, isLight ? styles.immatBadgeLight : null]}>
-              <Text style={[styles.immatBadgeLabel, isLight ? styles.immatBadgeLabelLight : null]}>IMMAT</Text>
-              <Text style={[styles.immatBadgeValue, isLight ? styles.immatBadgeValueLight : null]}>{vehicleData.immat || '-'}</Text>
+              <View style={[styles.plateEuroBand, isLight ? styles.plateEuroBandLight : null]}>
+                <Text style={styles.plateEuroStars}>★</Text>
+                <Text style={styles.plateEuroF}>F</Text>
+              </View>
+              <Text style={[styles.immatBadgeValue, isLight ? styles.immatBadgeValueLight : null]} numberOfLines={1}>
+                {immatDisplay}
+              </Text>
+              <View style={[styles.plateDeptBand, isLight ? styles.plateDeptBandLight : null]}>
+                {depCode === '13' ? (
+                  <Image source={{ uri: MARSEILLE_ESCUTCHEON_URI }} style={styles.plateDeptEmblem} resizeMode="contain" />
+                ) : (
+                  <Text style={[styles.plateDeptCode, isLight ? styles.plateDeptCodeLight : null]}>🇫🇷</Text>
+                )}
+              </View>
             </View>
             <View style={styles.docQuickRow}>
               <Pressable
@@ -704,9 +755,15 @@ export default function HomeScreen() {
                       </>
                     ) : category.id === 5 ? (
                       <>
-                        <View style={[styles.iconContainer, isLight ? styles.iconContainerLight : null, { borderColor }]}>
+                        <Animated.View
+                          style={[
+                            styles.iconContainer,
+                            isLight ? styles.iconContainerLight : null,
+                            { borderColor, transform: [{ scale: gpsPulse }] },
+                          ]}
+                        >
                           <Icon size={24} color={borderColor} />
-                        </View>
+                        </Animated.View>
                         <Text style={[styles.categoryTitle, isLight ? styles.categoryTitleLight : null]}>{category.title}</Text>
                         <Text style={[styles.categoryDescription, isLight ? styles.categoryDescriptionLight : null]}>
                           {category.description}
@@ -996,17 +1053,68 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(4,8,14,0.72)',
+    gap: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 7,
     borderWidth: 1,
-    borderColor: 'rgba(212,175,55,0.55)',
+    borderColor: '#d1d5db',
+    backgroundColor: '#f8fafc',
+    overflow: 'hidden',
+    height: 26,
   },
   immatBadgeLight: {
-    backgroundColor: 'rgba(248,250,252,0.95)',
-    borderColor: 'rgba(2,132,199,0.3)',
+    backgroundColor: '#ffffff',
+    borderColor: '#cbd5e1',
+  },
+  plateEuroBand: {
+    width: 16,
+    height: '100%',
+    backgroundColor: '#1d4ed8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.55)',
+  },
+  plateEuroBandLight: {
+    backgroundColor: '#2563eb',
+  },
+  plateEuroStars: {
+    color: '#fbbf24',
+    fontSize: 7,
+    lineHeight: 8,
+    marginTop: 1,
+  },
+  plateEuroF: {
+    color: '#ffffff',
+    fontSize: 7,
+    fontWeight: '800',
+    lineHeight: 8,
+    marginTop: -1,
+  },
+  plateDeptBand: {
+    width: 20,
+    height: '100%',
+    backgroundColor: '#1d4ed8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255,255,255,0.55)',
+  },
+  plateDeptBandLight: {
+    backgroundColor: '#2563eb',
+  },
+  plateDeptCode: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  plateDeptCodeLight: {
+    color: '#ffffff',
+  },
+  plateDeptEmblem: {
+    width: 14,
+    height: 14,
   },
   immatBadgeLabel: {
     color: '#9fb0c3',
@@ -1018,10 +1126,13 @@ const styles = StyleSheet.create({
     color: '#64748b',
   },
   immatBadgeValue: {
-    color: '#f7e8b8',
-    fontSize: 11,
+    color: '#111827',
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
+    paddingHorizontal: 7,
+    minWidth: 86,
+    textAlign: 'center',
   },
   immatBadgeValueLight: {
     color: '#0f172a',

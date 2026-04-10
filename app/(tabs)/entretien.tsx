@@ -1,5 +1,4 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { documentDirectory, downloadAsync, getInfoAsync } from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
@@ -11,7 +10,6 @@ import {
   Animated,
   Easing,
   Image,
-  ImageBackground,
   Keyboard,
   Linking,
   Modal,
@@ -26,6 +24,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKilometrage } from '../../context/KilometrageContext';
 import { useVehicle } from '../../context/VehicleContext';
+import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
 import { normalizeDocumentCapture } from '../../services/documentScan';
 import { userGetItem, userSetItem } from '../../services/userStorage';
@@ -834,25 +833,19 @@ export default function EntretienScreen() {
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
       {activePanel == null ? (
         <>
-          <ImageBackground
-            source={{ uri: 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&w=1600&q=70' }}
-            style={styles.heroBanner}
-            imageStyle={styles.heroBannerImage}
-          >
-            <LinearGradient colors={['rgba(0,0,0,0.16)', 'rgba(0,0,0,0.72)', '#0b0f14']} locations={[0, 0.56, 1]} style={styles.heroOverlay}>
-              <View style={styles.heroIconWrap}>
-                <MaterialCommunityIcons name="clipboard-list-outline" size={30} color="#00F2FF" />
-              </View>
-              <Text style={styles.pageTitle}>CARNET D&apos;ENTRETIEN</Text>
-              <Text style={styles.syncHint}>
-                Vehicule: {vehicleData?.modele || '-'} | Km: {currentKm.toLocaleString('fr-FR')} | CT: {latestCt?.name || 'aucun'}
-              </Text>
-            </LinearGradient>
-          </ImageBackground>
+          <PremiumHeroBanner variant="entretien" height={140} alignCenter>
+            <View style={styles.heroIconWrap}>
+              <MaterialCommunityIcons name="clipboard-list-outline" size={30} color="#00F2FF" />
+            </View>
+            <Text style={styles.pageTitle}>CARNET D&apos;ENTRETIEN</Text>
+            <Text style={styles.syncHint}>
+              Vehicule: {vehicleData?.modele || '-'} | Km: {currentKm.toLocaleString('fr-FR')} | CT: {latestCt?.name || 'aucun'}
+            </Text>
+          </PremiumHeroBanner>
         </>
       ) : null}
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} keyboardDismissMode="on-drag">
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} keyboardDismissMode="on-drag" scrollEnabled={false}>
         <Animated.View
           style={{
             opacity: motionOpacity,
@@ -940,29 +933,20 @@ export default function EntretienScreen() {
             contentContainerStyle={{ paddingBottom: 40 }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
+            scrollEnabled={false}
           >
             <Animated.View style={{ opacity: motionOpacity, transform: [{ translateY: motionTranslateY }] }}>
             {activePanel === 'pneus' ? (
               <View style={styles.card}>
                 {pneusView === 'menu' ? (
                   <>
-                    <ImageBackground
-                      source={{ uri: 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&w=1600&q=70' }}
-                      style={styles.pneusHeroBanner}
-                      imageStyle={styles.pneusHeroBannerImage}
-                    >
-                      <LinearGradient
-                        colors={['rgba(0,0,0,0.16)', 'rgba(0,0,0,0.72)', UI_THEME.bg]}
-                        locations={[0, 0.56, 1]}
-                        style={styles.pneusHeroOverlay}
-                      >
-                        <View style={styles.pneusHeroIconWrap}>
-                          <MaterialCommunityIcons name="tire" size={30} color="#d4af37" />
-                        </View>
-                        <Text style={styles.pneusHeroTitle}>Atelier Pneus</Text>
-                        <Text style={styles.pneusHeroSub}>Créez ou consultez votre dossier avec un parcours guidé premium</Text>
-                      </LinearGradient>
-                    </ImageBackground>
+                    <PremiumHeroBanner variant="entretien_pneus" height={140} alignCenter borderAccent="gold" style={styles.pneusHeroBanner}>
+                      <View style={styles.pneusHeroIconWrap}>
+                        <MaterialCommunityIcons name="tire" size={30} color="#d4af37" />
+                      </View>
+                      <Text style={styles.pneusHeroTitle}>Atelier Pneus</Text>
+                      <Text style={styles.pneusHeroSub}>Créez ou consultez votre dossier avec un parcours guidé premium</Text>
+                    </PremiumHeroBanner>
                     <Pressable style={({ pressed }) => [styles.folderCard, styles.pneusActionCard, styles.glassCard, pressed && styles.scaleDown]} onPress={() => startPneusWizard(true)}>
                       <MaterialCommunityIcons name="tire" size={24} color="#d4af37" />
                       <Text style={styles.folderTitle}>VOUS AVEZ CHANGÉ DE PNEUS ?</Text>
@@ -1239,22 +1223,6 @@ export default function EntretienScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: UI_THEME.bg, paddingHorizontal: 16, paddingTop: 54 },
-  heroBanner: {
-    height: 140,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 10,
-    borderWidth: 0.5,
-    borderColor: UI_THEME.cyanBorder,
-  },
-  heroBannerImage: { resizeMode: 'cover' },
-  heroOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 12,
-    paddingHorizontal: 12,
-  },
   heroIconWrap: {
     width: 54,
     height: 54,
@@ -1354,20 +1322,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: '800', color: UI_THEME.textSecondary },
   modalSubtitle: { marginTop: 2, fontSize: 11, color: '#94a3b8', textAlign: 'center' },
   pneusHeroBanner: {
-    height: 140,
-    borderRadius: 16,
-    overflow: 'hidden',
     marginBottom: 10,
-    borderWidth: 0.5,
-    borderColor: UI_THEME.goldBorder,
-  },
-  pneusHeroBannerImage: { resizeMode: 'cover' },
-  pneusHeroOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 12,
-    paddingHorizontal: 12,
   },
   pneusHeroIconWrap: {
     width: 54,

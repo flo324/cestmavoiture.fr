@@ -285,6 +285,7 @@ export default function ScanCG() {
         contentContainerStyle={{ paddingBottom: 30, flexGrow: 1 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        scrollEnabled={false}
       >
         <Animated.View
           style={{

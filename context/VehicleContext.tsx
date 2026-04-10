@@ -26,26 +26,14 @@ type VehicleContextValue = {
   deleteVehicle: (vehicleId: string) => void;
 };
 
-const STORAGE_KEY_SINGLE = '@cestmavoiture_user_v2';
 const STORAGE_KEY_VEHICLES = '@cestmavoiture_user_vehicles_v1';
 const STORAGE_KEY_ACTIVE = '@cestmavoiture_user_active_vehicle_v1';
 
 const defaultVehicleData: VehicleData = {
-  alias: '307',
-  prenom: 'Florent',
-  nom: 'DAMIANO',
-  modele: '307 PEUGEOT',
-  immat: '56 Ayw 13',
-  photoUri: '',
-  photoBgCenter: '#334155',
-  photoBgEdge: '#0B1120',
-};
-
-const secondVehicleData: VehicleData = {
-  alias: '107',
-  prenom: 'Florent',
-  nom: 'DAMIANO',
-  modele: '107 PEUGEOT',
+  alias: '',
+  prenom: '',
+  nom: '',
+  modele: '',
   immat: '',
   photoUri: '',
   photoBgCenter: '#334155',
@@ -54,22 +42,12 @@ const secondVehicleData: VehicleData = {
 
 const VehicleContext = createContext<VehicleContextValue | undefined>(undefined);
 
-function hasVehicleIdentity(v: Partial<VehicleData> | null | undefined): boolean {
-  if (!v) return false;
-  return [v.alias, v.modele, v.immat, v.prenom, v.nom].some((x) => String(x ?? '').trim().length > 0);
-}
-
-function ensureBaseFleet(list: VehicleItem[]): VehicleItem[] {
-  const next = [...list];
-  const has307 = next.some((v) => `${v.alias} ${v.modele}`.toUpperCase().includes('307'));
-  const has107 = next.some((v) => `${v.alias} ${v.modele}`.toUpperCase().includes('107'));
-  if (!has307) {
-    next.unshift({ id: `seed-307`, ...defaultVehicleData });
-  }
-  if (!has107) {
-    next.push({ id: `seed-107`, ...secondVehicleData });
-  }
-  return next;
+function isLegacyDemoVehicle(v: VehicleItem): boolean {
+  const identity = `${v.alias} ${v.prenom} ${v.nom} ${v.modele} ${v.immat}`.toUpperCase();
+  if (v.id === 'seed-307' || v.id === 'seed-107') return true;
+  if (identity.includes('FLORENT') && identity.includes('DAMIANO')) return true;
+  if (identity.includes('307 PEUGEOT') || identity.includes('107 PEUGEOT')) return true;
+  return false;
 }
 
 export function VehicleProvider({ children }: { children: React.ReactNode }) {
@@ -81,10 +59,9 @@ export function VehicleProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const [rawVehicles, rawActive, rawLegacy] = await Promise.all([
+        const [rawVehicles, rawActive] = await Promise.all([
           userGetItem(STORAGE_KEY_VEHICLES),
           userGetItem(STORAGE_KEY_ACTIVE),
-          userGetItem(STORAGE_KEY_SINGLE),
         ]);
         if (rawVehicles) {
           const parsed = JSON.parse(rawVehicles) as VehicleItem[];
@@ -100,61 +77,18 @@ export function VehicleProvider({ children }: { children: React.ReactNode }) {
               photoBgCenter: String(v?.photoBgCenter ?? '#334155'),
               photoBgEdge: String(v?.photoBgEdge ?? '#0B1120'),
             }));
-            const withFleet = ensureBaseFleet(normalized);
-            const fallbackId = withFleet.find((v) => hasVehicleIdentity(v))?.id ?? withFleet[0].id;
+            const cleaned = normalized.filter((v) => !isLegacyDemoVehicle(v));
+            const safeVehicles = cleaned.length > 0 ? cleaned : [{ id: 'default', ...defaultVehicleData }];
+            const fallbackId = safeVehicles[0]?.id ?? 'default';
             const activeId =
-              rawActive && withFleet.some((v) => v.id === rawActive) ? rawActive : fallbackId;
+              rawActive && safeVehicles.some((v) => v.id === rawActive) ? rawActive : fallbackId;
             setActiveVehicleId(activeId);
-            if (rawLegacy) {
-              const legacy = JSON.parse(rawLegacy) as Partial<VehicleData>;
-              const activeVehicle = withFleet.find((v) => v.id === activeId);
-              if (!hasVehicleIdentity(activeVehicle) && hasVehicleIdentity(legacy)) {
-                const repaired = withFleet.map((v) =>
-                  v.id === activeId
-                    ? {
-                        ...v,
-                        alias: String(legacy?.alias ?? legacy?.modele ?? defaultVehicleData.alias),
-                        prenom: String(legacy?.prenom ?? defaultVehicleData.prenom),
-                        nom: String(legacy?.nom ?? defaultVehicleData.nom),
-                        modele: String(legacy?.modele ?? defaultVehicleData.modele),
-                        immat: String(legacy?.immat ?? defaultVehicleData.immat),
-                        photoUri: String(legacy?.photoUri ?? ''),
-                        photoBgCenter: String(legacy?.photoBgCenter ?? '#334155'),
-                        photoBgEdge: String(legacy?.photoBgEdge ?? '#0B1120'),
-                      }
-                    : v
-                );
-                setVehicles(repaired);
-              } else {
-                setVehicles(withFleet);
-              }
-            } else {
-              setVehicles(withFleet);
-            }
+            setVehicles(safeVehicles);
             setHydrated(true);
             return;
           }
         }
-        if (rawLegacy) {
-          const parsed = JSON.parse(rawLegacy) as Partial<VehicleData>;
-          const migrated: VehicleItem = {
-            id: 'default',
-            alias: String(parsed?.alias ?? parsed?.modele ?? defaultVehicleData.alias),
-            prenom: String(parsed?.prenom ?? defaultVehicleData.prenom),
-            nom: String(parsed?.nom ?? defaultVehicleData.nom),
-            modele: String(parsed?.modele ?? defaultVehicleData.modele),
-            immat: String(parsed?.immat ?? defaultVehicleData.immat),
-            photoUri: String(parsed?.photoUri ?? ''),
-            photoBgCenter: String(parsed?.photoBgCenter ?? '#334155'),
-            photoBgEdge: String(parsed?.photoBgEdge ?? '#0B1120'),
-          };
-          const fleet = ensureBaseFleet([migrated]);
-          setVehicles(fleet);
-          setActiveVehicleId(fleet[0].id);
-          setHydrated(true);
-          return;
-        }
-        const fleet = ensureBaseFleet([{ id: 'default', ...defaultVehicleData }]);
+        const fleet = [{ id: 'default', ...defaultVehicleData }];
         setVehicles(fleet);
         setActiveVehicleId(fleet[0].id);
       } catch (error) {

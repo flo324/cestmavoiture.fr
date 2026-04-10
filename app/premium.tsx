@@ -24,7 +24,7 @@ export default function PremiumScreen() {
         end={{ x: 1, y: 1 }}
         style={styles.bg}
       >
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} scrollEnabled={false}>
           <View style={styles.topRow}>
             <Pressable style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]} onPress={() => router.back()}>
               <Text style={styles.backBtnText}>RETOUR</Text>
