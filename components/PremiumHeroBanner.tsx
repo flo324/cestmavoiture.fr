@@ -70,7 +70,7 @@ type Props = {
   children: React.ReactNode;
   /** Aligner le contenu en bas (défaut) ou centré */
   contentBottom?: boolean;
-  /** Bordure : cyan (défaut) ou or (pneus) */
+  /** @deprecated conservé pour compat ; plus de bordure sur le bandeau */
   borderAccent?: 'cyan' | 'gold';
   /** Centrer le contenu horizontalement (titres) */
   alignCenter?: boolean;
@@ -85,7 +85,6 @@ export function PremiumHeroBanner({
   style,
   children,
   contentBottom = true,
-  borderAccent = 'cyan',
   alignCenter = false,
 }: Props) {
   const { width: winW } = useWindowDimensions();
@@ -134,10 +133,8 @@ export function PremiumHeroBanner({
     if (next > 0 && Math.abs(next - cw) > 1) setCw(next);
   };
 
-  const borderColor = borderAccent === 'gold' ? UI_THEME.goldBorder : UI_THEME.cyanBorder;
-
   return (
-    <View style={[{ borderColor }, styles.wrap, { height }, style]} onLayout={onLayout}>
+    <View style={[styles.wrap, { height }, style]} onLayout={onLayout}>
       <Animated.View
         style={[
           styles.imgLayer,
@@ -174,7 +171,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     marginBottom: 14,
-    borderWidth: 0.5,
     backgroundColor: '#0a0e14',
   },
   imgLayer: {

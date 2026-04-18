@@ -74,11 +74,13 @@ export default function OnboardingScreen() {
     const payload = [
       {
         id,
+        marque: '',
         alias: alias.trim() || modele.trim(),
         prenom: prenom.trim(),
         nom: nom.trim(),
         modele: modele.trim(),
         immat: immat.trim(),
+        kilometrage: 0,
         photoUri: '',
         photoBgCenter: palette.center,
         photoBgEdge: palette.edge,

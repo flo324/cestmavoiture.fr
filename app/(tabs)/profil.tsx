@@ -24,7 +24,16 @@ import { useAuth } from '../../context/AuthContext';
 import { useKilometrage } from '../../context/KilometrageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useVehicle } from '../../context/VehicleContext';
+import { usePremiumTabEntrance } from '../../hooks/usePremiumTabEntrance';
 import { enhanceVehiclePhotoPremium } from '../../services/premiumVehiclePhoto';
+import { upsertProfileNames } from '../../services/profileDb';
+import { isSupabaseConfigured } from '../../services/supabase';
+import {
+  insertVehicle,
+  isRemoteVehicleId,
+  parseKmInput,
+  updateVehicleRemoteFields,
+} from '../../services/vehiclesDb';
 import { lookupVehicleByPlate } from '../../services/vehicleLookup';
 
 type VehicleBox = {
@@ -36,7 +45,15 @@ type VehicleBox = {
 
 const MAX_VISION_EDGE = 1280;
 const GEMINI_VISION_MODEL = 'gemini-1.5-flash';
-type ProfileDraft = { prenom: string; nom: string; alias: string; modele: string; immat: string; km: string };
+type ProfileDraft = {
+  prenom: string;
+  nom: string;
+  alias: string;
+  marque: string;
+  modele: string;
+  immat: string;
+  km: string;
+};
 
 function extractJsonObject(text: string): string | null {
   const start = text.indexOf('{');
@@ -209,20 +226,29 @@ export default function ProfilScreen() {
   const { height } = useWindowDimensions();
   const compact = height < 760;
   const roomy = height > 900;
-  const { logout, currentLogin, deleteAccount } = useAuth();
+  const { logout, currentLogin, deleteAccount, currentUserId } = useAuth();
   // 1. Gestion du Kilométrage (via le contexte pour la synchro)
   const context = useKilometrage();
   const kmValue = context ? context.km : '0';
   const updateKm = context ? context.updateKm : async () => {};
 
   // 2. États partagés (synchro instantanée Profil <-> Dashboard)
-  const { vehicleData, setVehicleField, vehicles, activeVehicleId, selectVehicle, addVehicle, deleteVehicle } =
-    useVehicle();
+  const {
+    vehicleData,
+    setVehicleField,
+    vehicles,
+    activeVehicleId,
+    selectVehicle,
+    addVehicle,
+    deleteVehicle,
+    registerInsertedVehicle,
+  } = useVehicle();
 
   const buildDraft = (): ProfileDraft => ({
     prenom: vehicleData.prenom || '',
     nom: vehicleData.nom || '',
     alias: vehicleData.alias || '',
+    marque: vehicleData.marque || '',
     modele: vehicleData.modele || '',
     immat: vehicleData.immat || '',
     km: kmValue || '0',
@@ -234,12 +260,26 @@ export default function ProfilScreen() {
   const [plateLookupBusy, setPlateLookupBusy] = useState(false);
   const [saveNotice, setSaveNotice] = useState('');
   const sessionSlide = useState(new Animated.Value(-10))[0];
+  const { animatedStyle: tabEntranceStyle } = usePremiumTabEntrance();
   const saveNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Charger le KM au démarrage (les infos véhicule viennent du VehicleContext)
   useEffect(() => {
     setDraft(buildDraft());
-  }, [vehicleData.prenom, vehicleData.nom, vehicleData.alias, vehicleData.modele, vehicleData.immat, kmValue]);
+  }, [
+    vehicleData.prenom,
+    vehicleData.nom,
+    vehicleData.alias,
+    vehicleData.marque,
+    vehicleData.modele,
+    vehicleData.immat,
+    kmValue,
+  ]);
+
+  useEffect(() => {
+    if (activeVehicleId == null) return;
+    void updateKm(String(Math.round(vehicleData.kilometrage)));
+  }, [activeVehicleId, vehicleData.kilometrage]);
 
   useEffect(() => {
     return () => {
@@ -277,9 +317,67 @@ export default function ProfilScreen() {
     setVehicleField('prenom', draft.prenom);
     setVehicleField('nom', draft.nom);
     setVehicleField('alias', draft.alias);
+    setVehicleField('marque', draft.marque);
     setVehicleField('modele', draft.modele);
     setVehicleField('immat', draft.immat);
+    setVehicleField('kilometrage', parseKmInput(draft.km));
     await updateKm(draft.km);
+
+    if (currentUserId && isSupabaseConfigured()) {
+      const kmNum = parseKmInput(draft.km);
+      if (!isRemoteVehicleId(activeVehicleId)) {
+        const inserted = await insertVehicle(
+          currentUserId,
+          {
+            marque: draft.marque.trim(),
+            modele: draft.modele.trim(),
+            immatriculation: draft.immat.trim(),
+            kilometrage: kmNum,
+            photo_url: vehicleData.photoUri ? vehicleData.photoUri : null,
+          },
+          {
+            alias: draft.alias,
+            prenom: draft.prenom,
+            nom: draft.nom,
+            photoBgCenter: vehicleData.photoBgCenter,
+            photoBgEdge: vehicleData.photoBgEdge,
+          }
+        );
+        if (!inserted) {
+          Alert.alert(
+            'Enregistrement',
+            'Impossible de créer le véhicule sur Supabase. Vérifiez la connexion, le fichier .env (URL + clé anon) et les politiques RLS (INSERT sur la table `vehicles`).'
+          );
+          return;
+        }
+        registerInsertedVehicle(inserted);
+      } else {
+        const { ok, error } = await updateVehicleRemoteFields(currentUserId, activeVehicleId!, {
+          marque: draft.marque.trim(),
+          modele: draft.modele.trim(),
+          immatriculation: draft.immat.trim(),
+          kilometrage: kmNum,
+          photo_url: vehicleData.photoUri ? vehicleData.photoUri : null,
+        });
+        if (!ok) {
+          Alert.alert('Enregistrement', error ?? 'Mise à jour Supabase impossible.');
+          return;
+        }
+      }
+
+      const pr = await upsertProfileNames(currentUserId, {
+        prenom: draft.prenom,
+        nom: draft.nom,
+        email: currentLogin ?? undefined,
+      });
+      if (!pr.ok) {
+        Alert.alert(
+          'Profil conducteur',
+          `${pr.error ?? 'Impossible d’enregistrer le prénom et le nom.'} Si le message parle d’une colonne manquante, exécutez dans SQL Editor le script qui ajoute prenom/nom sur la table public.profiles (fichier de migration du projet).`
+        );
+      }
+    }
+
     showSavedNotice();
   };
 
@@ -287,9 +385,10 @@ export default function ProfilScreen() {
     draft.prenom !== (vehicleData.prenom || '') ||
     draft.nom !== (vehicleData.nom || '') ||
     draft.alias !== (vehicleData.alias || '') ||
+    draft.marque !== (vehicleData.marque || '') ||
     draft.modele !== (vehicleData.modele || '') ||
     draft.immat !== (vehicleData.immat || '') ||
-    draft.km !== (kmValue || '0');
+    parseKmInput(draft.km) !== (vehicleData.kilometrage ?? 0);
 
   const confirmSaveIfNeeded = () => {
     if (!hasPendingChanges()) return;
@@ -323,6 +422,35 @@ export default function ProfilScreen() {
       setVehicleField('photoUri', premium.photoUri);
       setVehicleField('photoBgCenter', premium.palette.center);
       setVehicleField('photoBgEdge', premium.palette.edge);
+      if (currentUserId && isSupabaseConfigured()) {
+        if (!isRemoteVehicleId(activeVehicleId)) {
+          const inserted = await insertVehicle(
+            currentUserId,
+            {
+              marque: vehicleData.marque.trim(),
+              modele: vehicleData.modele.trim(),
+              immatriculation: vehicleData.immat.trim(),
+              kilometrage: vehicleData.kilometrage,
+              photo_url: premium.photoUri,
+            },
+            {
+              alias: vehicleData.alias,
+              prenom: vehicleData.prenom,
+              nom: vehicleData.nom,
+              photoBgCenter: premium.palette.center,
+              photoBgEdge: premium.palette.edge,
+            }
+          );
+          if (inserted) registerInsertedVehicle(inserted);
+        } else {
+          const { ok, error } = await updateVehicleRemoteFields(currentUserId, activeVehicleId!, {
+            photo_url: premium.photoUri,
+          });
+          if (!ok) {
+            Alert.alert('Photo', error ?? 'Envoi de la photo vers Supabase impossible.');
+          }
+        }
+      }
     } catch (error) {
       console.log('[Profil] image picker failed', error);
       Alert.alert('Erreur', "Impossible d'ouvrir la galerie.");
@@ -383,13 +511,18 @@ export default function ProfilScreen() {
       const found = await lookupVehicleByPlate(plate);
       const model = (found?.fullModel || [found?.make, found?.model].filter(Boolean).join(' ')).trim();
       const alias = (found?.model || model || 'Nouveau véhicule').trim();
-      addVehicle({
+      const newId = await addVehicle({
+        marque: (found?.make || '').trim(),
         alias,
         modele: model || '',
         immat: plate.toUpperCase(),
         prenom: vehicleData.prenom,
         nom: vehicleData.nom,
       });
+      if (currentUserId && isSupabaseConfigured() && !newId) {
+        Alert.alert('Erreur', "Impossible d'enregistrer le véhicule sur Supabase. Vérifiez la connexion.");
+        return;
+      }
       setVehiclesModalVisible(false);
       setNewVehiclePlate('');
       Alert.alert(
@@ -407,13 +540,14 @@ export default function ProfilScreen() {
       behavior="padding"
       keyboardVerticalOffset={Platform.OS === 'ios' ? (compact ? 58 : 64) : 0}
     >
-      <View
-        style={[
-          styles.container,
-          isLight ? styles.containerLight : null,
-          compact ? styles.containerCompact : roomy ? styles.containerRoomy : null,
-        ]}
-      >
+      <Animated.View style={tabEntranceStyle}>
+        <View
+          style={[
+            styles.container,
+            isLight ? styles.containerLight : null,
+            compact ? styles.containerCompact : roomy ? styles.containerRoomy : null,
+          ]}
+        >
         <View style={styles.headerRow}>
           <Text style={[styles.pageTitle, isLight ? styles.pageTitleLight : null]}>PROFIL</Text>
           <View style={[styles.headerSwitchWrap, isLight ? styles.headerSwitchWrapLight : null]}>
@@ -463,6 +597,31 @@ export default function ProfilScreen() {
 
           <View style={styles.row}>
             <View style={styles.col}>
+              <Text style={styles.label}>Marque</Text>
+              <TextInput
+                style={[styles.input, isLight ? styles.inputLight : null]}
+                value={draft.marque}
+                onChangeText={(t) => setDraft((prev) => ({ ...prev, marque: t }))}
+                onBlur={confirmSaveIfNeeded}
+                placeholder="Ex: Peugeot"
+                placeholderTextColor="#6b7b90"
+              />
+            </View>
+            <View style={styles.col}>
+              <Text style={styles.label}>Modèle du véhicule</Text>
+              <TextInput
+                style={[styles.input, isLight ? styles.inputLight : null]}
+                value={draft.modele}
+                onChangeText={(t) => setDraft((prev) => ({ ...prev, modele: t }))}
+                onBlur={confirmSaveIfNeeded}
+                placeholder="Ex: 307 SW"
+                placeholderTextColor="#6b7b90"
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={styles.col}>
               <Text style={styles.label}>Nom du véhicule</Text>
               <TextInput
                 style={[styles.input, isLight ? styles.inputLight : null]}
@@ -474,20 +633,6 @@ export default function ProfilScreen() {
               />
             </View>
             <View style={styles.col}>
-              <Text style={styles.label}>Modèle du véhicule</Text>
-              <TextInput
-                style={[styles.input, isLight ? styles.inputLight : null]}
-                value={draft.modele}
-                onChangeText={(t) => setDraft((prev) => ({ ...prev, modele: t }))}
-                onBlur={confirmSaveIfNeeded}
-                placeholder="Ex: Peugeot 307"
-                placeholderTextColor="#6b7b90"
-              />
-            </View>
-          </View>
-
-          <View style={styles.row}>
-            <View style={styles.col}>
               <Text style={styles.label}>Immatriculation</Text>
               <TextInput
                 style={[styles.input, isLight ? styles.inputLight : null]}
@@ -496,7 +641,10 @@ export default function ProfilScreen() {
                 onBlur={confirmSaveIfNeeded}
               />
             </View>
-            <View style={styles.col}>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.col, { flex: 1 }]}>
               <Text style={styles.label}>Kilométrage actuel</Text>
               <TextInput
                 style={[styles.input, isLight ? styles.inputLight : null]}
@@ -548,7 +696,8 @@ export default function ProfilScreen() {
             <Text style={styles.deleteAccountBtnText}>SUPPRIMER LE COMPTE</Text>
           </TouchableOpacity>
         </View>
-      </View>
+        </View>
+      </Animated.View>
 
       <Modal
         visible={vehiclesModalVisible}
@@ -561,7 +710,8 @@ export default function ProfilScreen() {
             <Text style={styles.accountsTitle}>MES VÉHICULES</Text>
             <ScrollView style={styles.accountsList} contentContainerStyle={{ paddingBottom: 6 }} scrollEnabled={false}>
               {vehicles.map((item) => {
-                const label = item.modele?.trim() || 'Véhicule';
+                const label =
+                  [item.marque, item.modele].filter(Boolean).join(' ').trim() || item.modele?.trim() || 'Véhicule';
                 const sub = item.immat?.trim() || 'Immatriculation non renseignée';
                 const isCurrent = activeVehicleId === item.id;
                 return (

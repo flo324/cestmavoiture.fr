@@ -2,16 +2,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as Linking from 'expo-linking';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -19,6 +19,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
@@ -27,27 +28,27 @@ import {
   fetchRoadTripPlanFromAI,
   geocodeRoadTripSteps,
 } from '../../services/roadTripAI';
+import { buildOrderedStops, fetchDrivingPath } from '../../services/googleDirections';
+import { staticOsmMapUrl } from '../../services/mapStatic';
 
 type Coords = { latitude: number; longitude: number; accuracy?: number | null; speed?: number | null };
 
 type ChatMsg = { role: 'user' | 'assistant'; text: string };
 
-function staticMapUrl(lat: number, lng: number, sizePx: number): string {
-  const z = 14;
-  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${z}&size=${sizePx}x${sizePx}&maptype=mapnik`;
-}
-
 export default function LocationScreen() {
   const insets = useSafeAreaInsets();
-  const { width: winW } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowDimensions();
+  const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const previewMapRef = useRef<MapView | null>(null);
+  const modalMapRef = useRef<MapView | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [coords, setCoords] = useState<Coords | null>(null);
   const [address, setAddress] = useState('');
+  const [gpsLive, setGpsLive] = useState(false);
 
   const [mapExpanded, setMapExpanded] = useState(false);
-  const [mapImageErr, setMapImageErr] = useState(false);
-  const [modalMapErr, setModalMapErr] = useState(false);
 
   const [rtMessages, setRtMessages] = useState<ChatMsg[]>([]);
   const [rtInput, setRtInput] = useState('');
@@ -57,62 +58,198 @@ export default function LocationScreen() {
     geocoded: { name: string; label: string; latitude: number; longitude: number }[];
     tips?: string;
   } | null>(null);
+  const [mapBase, setMapBase] = useState<'standard' | 'satellite' | 'hybrid'>('standard');
+  const [directionsPath, setDirectionsPath] = useState<{ latitude: number; longitude: number }[] | null>(null);
+  const [directionsLoading, setDirectionsLoading] = useState(false);
+  const coordsRef = useRef(coords);
+  coordsRef.current = coords;
 
-  const previewSize = useMemo(() => Math.min(winW - 20, 340), [winW]);
-  const mapUri = coords && !mapImageErr ? staticMapUrl(coords.latitude, coords.longitude, 800) : null;
+  const routeCoords = useMemo(
+    () =>
+      (rtPlan?.geocoded?.map((p) => ({
+        latitude: p.latitude,
+        longitude: p.longitude,
+      })) ?? []) as { latitude: number; longitude: number }[],
+    [rtPlan]
+  );
 
-  const loadPosition = useCallback(async () => {
-    setLoading(true);
-    setMapImageErr(false);
-    setModalMapErr(false);
+  const straightLinePath = useMemo(() => {
+    const pts: { latitude: number; longitude: number }[] = [];
+    if (coords) pts.push({ latitude: coords.latitude, longitude: coords.longitude });
+    rtPlan?.geocoded.forEach((g) => pts.push({ latitude: g.latitude, longitude: g.longitude }));
+    return pts;
+  }, [coords?.latitude, coords?.longitude, rtPlan]);
+
+  const polylineCoords = useMemo(() => {
+    if (directionsPath && directionsPath.length >= 2) return directionsPath;
+    if (straightLinePath.length >= 2) return straightLinePath;
+    return [] as { latitude: number; longitude: number }[];
+  }, [directionsPath, straightLinePath]);
+
+  useEffect(() => {
+    if (!rtPlan?.geocoded?.length) {
+      setDirectionsPath(null);
+      setDirectionsLoading(false);
+      return;
+    }
+    const c = coordsRef.current;
+    const stops = buildOrderedStops(
+      c ? { latitude: c.latitude, longitude: c.longitude } : null,
+      rtPlan.geocoded.map((g) => ({ latitude: g.latitude, longitude: g.longitude }))
+    );
+    if (stops.length < 2) {
+      setDirectionsPath(null);
+      setDirectionsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDirectionsLoading(true);
+    void fetchDrivingPath(stops).then((path) => {
+      if (cancelled) return;
+      setDirectionsPath(path && path.length >= 2 ? path : null);
+      setDirectionsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rtPlan]);
+
+  const previewSize = useMemo(
+    () => Math.min(Math.floor(winW - 16), Math.floor(winH * 0.4), 340),
+    [winW, winH]
+  );
+  const webMapPx = useMemo(() => Math.min(640, Math.max(280, Math.round(previewSize * 2))), [previewSize]);
+
+  const startLiveTracking = useCallback(async () => {
+    if (watchRef.current) return;
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission GPS', 'Autorisez la localisation pour utiliser le GPS.');
-        return;
-      }
-      const current = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const next: Coords = {
-        latitude: current.coords.latitude,
-        longitude: current.coords.longitude,
-        accuracy: current.coords.accuracy,
-        speed: current.coords.speed,
-      };
-      setCoords(next);
-      try {
-        const rev = await Location.reverseGeocodeAsync({
-          latitude: next.latitude,
-          longitude: next.longitude,
-        });
-        const first = rev?.[0];
-        if (first) {
-          const city = [first.postalCode, first.city].filter(Boolean).join(' ');
-          const street = [first.name, first.street].filter(Boolean).join(' ');
-          setAddress([street, city, first.country].filter(Boolean).join(', '));
-        } else {
-          setAddress('');
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      watchRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          distanceInterval: 6,
+          timeInterval: 3500,
+        },
+        (loc) => {
+          setCoords({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy ?? null,
+            speed: loc.coords.speed ?? null,
+          });
         }
-      } catch {
-        setAddress('');
-      }
+      );
+      setGpsLive(true);
     } catch {
-      Alert.alert('GPS', "Impossible d'obtenir la position actuelle.");
-    } finally {
-      setLoading(false);
+      setGpsLive(false);
     }
   }, []);
 
+  const loadPosition = useCallback(
+    async (mode: 'initial' | 'refresh' = 'initial') => {
+      if (mode === 'initial') setLoading(true);
+      else setRefreshing(true);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          if (mode === 'initial') {
+            Alert.alert('Permission GPS', 'Autorisez la localisation pour utiliser le GPS.');
+          }
+          return;
+        }
+        const current = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        const next: Coords = {
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+          accuracy: current.coords.accuracy,
+          speed: current.coords.speed,
+        };
+        setCoords(next);
+        void startLiveTracking();
+        try {
+          const rev = await Location.reverseGeocodeAsync({
+            latitude: next.latitude,
+            longitude: next.longitude,
+          });
+          const first = rev?.[0];
+          if (first) {
+            const city = [first.postalCode, first.city].filter(Boolean).join(' ');
+            const street = [first.name, first.street].filter(Boolean).join(' ');
+            setAddress([street, city, first.country].filter(Boolean).join(', '));
+          } else {
+            setAddress('');
+          }
+        } catch {
+          setAddress('');
+        }
+      } catch {
+        if (mode === 'initial') {
+          Alert.alert('GPS', "Impossible d'obtenir la position actuelle.");
+        }
+      } finally {
+        if (mode === 'initial') setLoading(false);
+        else setRefreshing(false);
+      }
+    },
+    [startLiveTracking]
+  );
+
   useEffect(() => {
-    void loadPosition();
+    void loadPosition('initial');
   }, [loadPosition]);
+
+  useEffect(() => {
+    const pts: { latitude: number; longitude: number }[] = [];
+    if (polylineCoords.length >= 2) pts.push(...polylineCoords);
+    else if (straightLinePath.length >= 2) pts.push(...straightLinePath);
+    else {
+      if (routeCoords.length) pts.push(...routeCoords);
+      if (coords) pts.push({ latitude: coords.latitude, longitude: coords.longitude });
+    }
+    if (pts.length === 0 && coords) pts.push({ latitude: coords.latitude, longitude: coords.longitude });
+    if (pts.length === 0) return;
+
+    const padPreview = { top: 12, right: 10, bottom: 36, left: 10 };
+    const padModal = { top: 88, right: 16, bottom: 200, left: 16 };
+
+    const run = () => {
+      if (pts.length === 1) {
+        const wide = routeCoords.length > 0;
+        const r = {
+          latitude: pts[0].latitude,
+          longitude: pts[0].longitude,
+          latitudeDelta: wide ? 0.2 : 0.008,
+          longitudeDelta: wide ? 0.2 : 0.008,
+        };
+        previewMapRef.current?.animateToRegion(r, 420);
+        modalMapRef.current?.animateToRegion(r, 420);
+        return;
+      }
+      previewMapRef.current?.fitToCoordinates(pts, { edgePadding: padPreview, animated: true });
+      modalMapRef.current?.fitToCoordinates(pts, { edgePadding: padModal, animated: true });
+    };
+    const t = setTimeout(run, polylineCoords.length >= 2 ? 420 : 320);
+    return () => clearTimeout(t);
+  }, [coords?.latitude, coords?.longitude, routeCoords, polylineCoords, straightLinePath]);
+
+  useEffect(() => {
+    return () => {
+      watchRef.current?.remove();
+      watchRef.current = null;
+      setGpsLive(false);
+    };
+  }, []);
 
   const sendRoadTrip = async () => {
     const text = rtInput.trim();
     if (!text || rtLoading) return;
     setRtInput('');
     setRtPlan(null);
+    setDirectionsPath(null);
+    setDirectionsLoading(false);
     setRtMessages((m) => [...m, { role: 'user', text }]);
     setRtLoading(true);
     try {
@@ -148,19 +285,25 @@ export default function LocationScreen() {
     }
   };
 
-  const renderChatItem = ({ item }: { item: ChatMsg }) => (
-    <View style={styles.chatBubbleWrap}>
-      <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant]}>
-        <Text style={item.role === 'user' ? styles.bubbleUserText : styles.bubbleAssistantText}>{item.text}</Text>
-      </View>
-    </View>
-  );
-
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
-        <View style={[styles.page, { paddingTop: Math.max(insets.top, 8) }]}>
-          <PremiumHeroBanner variant="gps" height={132}>
+        <ScrollView
+          style={styles.pageScroll}
+          contentContainerStyle={[styles.pageScrollContent, { paddingTop: Math.max(insets.top, 8) }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void loadPosition('refresh')}
+              tintColor={UI_THEME.cyan}
+              colors={[UI_THEME.cyan]}
+            />
+          }
+        >
+          <PremiumHeroBanner variant="gps" height={108}>
             <View style={styles.heroIconWrap}>
               <MaterialCommunityIcons name="crosshairs-gps" size={28} color={UI_THEME.cyan} />
             </View>
@@ -177,60 +320,99 @@ export default function LocationScreen() {
             <View style={styles.folderHeader}>
               <MaterialCommunityIcons name="map-marker" size={24} color="#f56565" />
               <Text style={styles.folderTitle}>Ma position</Text>
+              {gpsLive && coords ? (
+                <View style={styles.gpsLivePill}>
+                  <View style={styles.gpsLiveDot} />
+                  <Text style={styles.gpsLiveText}>GPS actif</Text>
+                </View>
+              ) : null}
             </View>
 
-            <Pressable
-              style={[styles.mapSquare, { width: previewSize, height: previewSize }]}
-              onPress={() => {
-                if (!coords) return;
-                setModalMapErr(false);
-                setMapExpanded(true);
-              }}
-              disabled={!coords || loading}
-            >
-              {loading ? (
+            <View style={[styles.mapSquare, { width: previewSize, height: previewSize }]}>
+              {loading && !coords ? (
                 <View style={styles.mapSquareInner}>
                   <ActivityIndicator color={UI_THEME.cyan} />
                   <Text style={styles.mapHint}>Signal GPS…</Text>
                 </View>
               ) : coords ? (
-                <>
-                  {mapUri && !mapImageErr ? (
+                Platform.OS === 'web' ? (
+                  <>
                     <Image
-                      source={{ uri: mapUri }}
+                      source={{ uri: staticOsmMapUrl(coords.latitude, coords.longitude, webMapPx) }}
                       style={StyleSheet.absoluteFill}
                       resizeMode="cover"
-                      onError={() => setMapImageErr(true)}
                     />
-                  ) : (
-                    <LinearGradient colors={['#0f172a', '#1e293b', '#0f172a']} style={StyleSheet.absoluteFill} />
-                  )}
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.82)']}
-                    style={styles.mapSquareBottomFade}
-                  />
-                  <View style={styles.mapPin} pointerEvents="none">
-                    <MaterialCommunityIcons name="map-marker" size={36} color="#f56565" />
-                  </View>
-                  <View style={styles.mapSquareFooter}>
-                    <Text style={styles.mapCoords} numberOfLines={1}>
-                      {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
-                    </Text>
-                    <Text style={styles.mapTapHint}>Appuyer pour agrandir</Text>
-                  </View>
-                </>
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.82)']}
+                      style={styles.mapSquareBottomFade}
+                    />
+                    <View style={styles.mapSquareFooter} pointerEvents="none">
+                      <Text style={styles.mapCoords} numberOfLines={1}>
+                        {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
+                      </Text>
+                      <Text style={styles.mapTapHint}>Carte statique (web)</Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <MapView
+                      ref={previewMapRef}
+                      provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                      style={StyleSheet.absoluteFill}
+                      initialRegion={{
+                        latitude: coords.latitude,
+                        longitude: coords.longitude,
+                        latitudeDelta: 0.006,
+                        longitudeDelta: 0.006,
+                      }}
+                      mapType={mapBase}
+                      showsUserLocation={!!coords}
+                      showsMyLocationButton={false}
+                      scrollEnabled
+                      zoomEnabled
+                      rotateEnabled
+                      pitchEnabled={false}
+                      loadingEnabled
+                      onPress={() => setMapExpanded(true)}
+                    >
+                      {polylineCoords.length >= 2 ? (
+                        <Polyline
+                          coordinates={polylineCoords}
+                          strokeWidth={4}
+                          strokeColor="rgba(0,233,245,0.92)"
+                          lineCap="round"
+                          lineJoin="round"
+                        />
+                      ) : null}
+                      {rtPlan?.geocoded.map((s, i) => (
+                        <Marker
+                          key={`pv-w-${i}`}
+                          coordinate={{ latitude: s.latitude, longitude: s.longitude }}
+                          title={`${i + 1}. ${s.name}`}
+                          pinColor="#22d3ee"
+                        />
+                      ))}
+                    </MapView>
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.82)']}
+                      style={styles.mapSquareBottomFade}
+                      pointerEvents="none"
+                    />
+                    <View style={styles.mapSquareFooter} pointerEvents="none">
+                      <Text style={styles.mapCoords} numberOfLines={1}>
+                        {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
+                      </Text>
+                      <Text style={styles.mapTapHint}>Pincer pour zoom · appui pour plein écran</Text>
+                    </View>
+                  </>
+                )
               ) : (
                 <View style={styles.mapSquareInner}>
                   <MaterialCommunityIcons name="map-marker-off" size={40} color="#64748b" />
                   <Text style={styles.mapHint}>Position indisponible</Text>
                 </View>
               )}
-            </Pressable>
-
-            <TouchableOpacity style={styles.refreshBtn} onPress={() => void loadPosition()} activeOpacity={0.9}>
-              <MaterialCommunityIcons name="refresh" size={18} color="#061018" />
-              <Text style={styles.refreshBtnText}>ACTUALISER GPS</Text>
-            </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.rtSection}>
@@ -239,12 +421,19 @@ export default function LocationScreen() {
               <Text style={styles.rtSectionTitle}>Road trip IA</Text>
             </View>
             <Text style={styles.rtSectionSub}>
-              Décrivez votre trajet : l’IA propose des étapes, puis ouvrez l’itinéraire dans Google Maps.
+              Décrivez votre trajet : l’IA propose des étapes, puis un tracé routier (Google Directions) s’affiche sur la
+              carte quand la clé API autorise l’API Directions ; sinon ligne droite entre les points.
             </Text>
+            {directionsLoading ? (
+              <View style={styles.directionsLoadingRow}>
+                <ActivityIndicator size="small" color={UI_THEME.cyan} />
+                <Text style={styles.directionsLoadingText}>Calcul de l’itinéraire routier…</Text>
+              </View>
+            ) : null}
             {!coords ? <Text style={styles.rtHint}>Activez le GPS pour partir de votre position actuelle.</Text> : null}
 
             <TextInput
-              style={styles.rtInputLarge}
+              style={[styles.rtInputLarge, { maxHeight: Math.min(120, Math.round(winH * 0.14)) }]}
               placeholder="Ex. : une semaine en Bretagne depuis Rennes, j’aime la côte"
               placeholderTextColor="#64748b"
               value={rtInput}
@@ -264,21 +453,21 @@ export default function LocationScreen() {
               <Text style={styles.rtSendWideText}>Envoyer à l’IA</Text>
             </TouchableOpacity>
 
-            <FlatList
-              data={rtMessages}
-              keyExtractor={(_, i) => `m-${i}`}
-              renderItem={renderChatItem}
-              style={styles.chatList}
-              contentContainerStyle={styles.chatListContent}
-              ListFooterComponent={
-                rtLoading ? (
-                  <View style={styles.rtLoadingRow}>
-                    <ActivityIndicator size="small" color={UI_THEME.cyan} />
-                    <Text style={styles.rtLoadingText}>Préparation du trajet…</Text>
+            <View style={styles.chatList}>
+              {rtMessages.map((item, i) => (
+                <View key={`m-${i}`} style={styles.chatBubbleWrap}>
+                  <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant]}>
+                    <Text style={item.role === 'user' ? styles.bubbleUserText : styles.bubbleAssistantText}>{item.text}</Text>
                   </View>
-                ) : null
-              }
-            />
+                </View>
+              ))}
+              {rtLoading ? (
+                <View style={styles.rtLoadingRow}>
+                  <ActivityIndicator size="small" color={UI_THEME.cyan} />
+                  <Text style={styles.rtLoadingText}>Préparation du trajet…</Text>
+                </View>
+              ) : null}
+            </View>
 
             {rtPlan && rtPlan.geocoded.length > 0 ? (
               <TouchableOpacity style={styles.rtMapsBtn} onPress={() => void openRoadTripInMaps()} activeOpacity={0.9}>
@@ -287,26 +476,72 @@ export default function LocationScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
-        </View>
+        </ScrollView>
       </SafeAreaView>
 
       <Modal visible={mapExpanded} animationType="fade" transparent={false} onRequestClose={() => setMapExpanded(false)}>
         <SafeAreaView style={styles.modalSafe} edges={['top', 'left', 'right']}>
           <View style={styles.modalBody}>
-            {coords && !modalMapErr ? (
+            {coords && Platform.OS !== 'web' ? (
+              <MapView
+                ref={modalMapRef}
+                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                style={styles.modalMapFill}
+                initialRegion={{
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                  latitudeDelta: 0.006,
+                  longitudeDelta: 0.006,
+                }}
+                mapType={mapBase}
+                showsUserLocation
+                showsMyLocationButton
+                rotateEnabled
+                pitchEnabled
+                loadingEnabled
+              >
+                {polylineCoords.length >= 2 ? (
+                  <Polyline
+                    coordinates={polylineCoords}
+                    strokeWidth={5}
+                    strokeColor="rgba(0,233,245,0.95)"
+                    lineCap="round"
+                    lineJoin="round"
+                  />
+                ) : null}
+                {rtPlan?.geocoded.map((s, i) => (
+                  <Marker
+                    key={`md-w-${i}`}
+                    coordinate={{ latitude: s.latitude, longitude: s.longitude }}
+                    title={`${i + 1}. ${s.name}`}
+                    pinColor="#22d3ee"
+                  />
+                ))}
+              </MapView>
+            ) : coords ? (
               <Image
-                source={{ uri: staticMapUrl(coords.latitude, coords.longitude, 1200) }}
+                source={{ uri: staticOsmMapUrl(coords.latitude, coords.longitude, 1200, 14) }}
                 style={styles.modalMapFill}
                 resizeMode="cover"
-                onError={() => setModalMapErr(true)}
               />
             ) : (
               <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.modalMapFill} />
             )}
-            <View style={styles.modalPinOverlay} pointerEvents="none">
-              <MaterialCommunityIcons name="map-marker" size={48} color="#f56565" />
-            </View>
             <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={styles.modalTopFade} />
+            <View style={[styles.modalMapModeRow, { top: insets.top + 52 }]} pointerEvents="box-none">
+              {(['standard', 'satellite', 'hybrid'] as const).map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  onPress={() => setMapBase(m)}
+                  style={[styles.modalMapChip, mapBase === m ? styles.modalMapChipActive : null]}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.modalMapChipText, mapBase === m ? styles.modalMapChipTextActive : null]}>
+                    {m === 'standard' ? 'Plan' : m === 'satellite' ? 'Satellite' : 'Mixte'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <TouchableOpacity style={[styles.modalClose, { top: insets.top + 8 }]} onPress={() => setMapExpanded(false)} activeOpacity={0.85}>
               <MaterialCommunityIcons name="close" size={26} color="#fff" />
             </TouchableOpacity>
@@ -329,17 +564,17 @@ export default function LocationScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: UI_THEME.bg },
   safe: { flex: 1 },
-  page: {
-    flex: 1,
+  pageScroll: { flex: 1 },
+  pageScrollContent: {
     paddingHorizontal: 10,
+    paddingBottom: 14,
+    flexGrow: 1,
   },
   heroIconWrap: {
     width: 48,
     height: 48,
     borderRadius: 14,
     backgroundColor: UI_THEME.glass,
-    borderWidth: 1,
-    borderColor: UI_THEME.goldBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
@@ -360,9 +595,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: UI_THEME.goldBorder,
-    backgroundColor: 'rgba(212,175,55,0.12)',
+    backgroundColor: 'rgba(212,175,55,0.22)',
   },
   premiumBadgeText: {
     color: UI_THEME.gold,
@@ -378,13 +611,37 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   folderBlock: {
-    marginBottom: 10,
+    marginBottom: 8,
   },
   folderHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     columnGap: 8,
-    marginBottom: 10,
+    rowGap: 6,
+    marginBottom: 8,
+  },
+  gpsLivePill: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(34,197,94,0.14)',
+  },
+  gpsLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+  },
+  gpsLiveText: {
+    color: '#86efac',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   folderTitle: {
     color: UI_THEME.textSecondary,
@@ -395,8 +652,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderRadius: 14,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: UI_THEME.cyanBorder,
     backgroundColor: '#0f172a',
   },
   mapSquareInner: {
@@ -411,12 +666,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: '42%',
-  },
-  mapPin: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    pointerEvents: 'none',
   },
   mapSquareFooter: {
     position: 'absolute',
@@ -445,25 +694,10 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   mapHint: { color: UI_THEME.textMuted, fontSize: 12 },
-  refreshBtn: {
-    marginTop: 12,
-    borderRadius: 12,
-    backgroundColor: UI_THEME.cyan,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    columnGap: 8,
-  },
-  refreshBtnText: { color: '#061018', fontWeight: '900', fontSize: 12, letterSpacing: 0.3 },
   rtSection: {
-    flex: 1,
-    minHeight: 0,
-    marginTop: 8,
+    marginTop: 6,
     backgroundColor: UI_THEME.panelSoft,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#1f2937',
     padding: 12,
   },
   rtHeaderRow: {
@@ -484,18 +718,21 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   rtHint: { color: '#a5b4fc', fontSize: 11, marginBottom: 6 },
-  chatList: { flex: 1, minHeight: 60, marginTop: 8 },
-  chatListContent: { paddingVertical: 6, flexGrow: 1 },
+  directionsLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+    marginBottom: 8,
+  },
+  directionsLoadingText: { color: '#94a3b8', fontSize: 11, fontWeight: '600' },
+  chatList: { marginTop: 8, paddingVertical: 4 },
   chatBubbleWrap: { marginBottom: 8 },
   rtInputLarge: {
-    minHeight: 132,
-    maxHeight: 200,
+    minHeight: 80,
     backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
     color: '#e2e8f0',
     fontSize: 14,
     lineHeight: 20,
@@ -549,18 +786,40 @@ const styles = StyleSheet.create({
   modalSafe: { flex: 1, backgroundColor: '#000' },
   modalBody: { flex: 1 },
   modalMapFill: { flex: 1, width: '100%' },
-  modalPinOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 80,
-  },
   modalTopFade: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
     height: 120,
+  },
+  modalMapModeRow: {
+    position: 'absolute',
+    left: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    zIndex: 9,
+  },
+  modalMapChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)',
+  },
+  modalMapChipActive: {
+    backgroundColor: 'rgba(0,233,245,0.22)',
+    borderColor: 'rgba(0,233,245,0.55)',
+  },
+  modalMapChipText: {
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  modalMapChipTextActive: {
+    color: '#ecfeff',
   },
   modalClose: {
     position: 'absolute',

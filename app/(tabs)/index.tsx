@@ -1,10 +1,24 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { BarChart3, ClipboardList, FileText, MapPin, PenTool, Settings } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Easing,
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Ellipse, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -13,6 +27,8 @@ import { UI_THEME } from '../../constants/uiTheme';
 import { useKilometrage } from '../../context/KilometrageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useVehicle } from '../../context/VehicleContext';
+import { usePremiumTabEntrance } from '../../hooks/usePremiumTabEntrance';
+import { staticOsmMapUrl } from '../../services/mapStatic';
 import { userGetItem } from '../../services/userStorage';
 
 const categories = [
@@ -108,6 +124,8 @@ export default function HomeScreen() {
   });
   const [docPreview, setDocPreview] = useState({ permis: '', cg: '' });
   const [docModal, setDocModal] = useState<null | 'permis' | 'cg'>(null);
+  const [gpsMapCoords, setGpsMapCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsMapLoading, setGpsMapLoading] = useState(true);
   const compact = screenH < 820;
   const ANIM_TIMING = {
     pulse: 620,
@@ -121,6 +139,7 @@ export default function HomeScreen() {
   const brandRollAnim = useRef(new Animated.Value(0)).current;
   const screenIntro = useRef(new Animated.Value(0)).current;
   const gpsPulse = useRef(new Animated.Value(1)).current;
+  const { animatedStyle: tabEntranceStyle } = usePremiumTabEntrance();
 
   const kmStats = useMemo(() => {
     const total = parseOdometerKm(kmCtx?.km);
@@ -132,6 +151,36 @@ export default function HomeScreen() {
   }, [kmCtx]);
   const immatDisplay = useMemo(() => (vehicleData.immat || '-').toUpperCase(), [vehicleData.immat]);
   const depCode = useMemo(() => extractDepartementFromImmat(vehicleData.immat), [vehicleData.immat]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        setGpsMapLoading(true);
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status !== 'granted') {
+            if (!cancelled) {
+              setGpsMapCoords(null);
+              setGpsMapLoading(false);
+            }
+            return;
+          }
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (!cancelled) {
+            setGpsMapCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          }
+        } catch {
+          if (!cancelled) setGpsMapCoords(null);
+        } finally {
+          if (!cancelled) setGpsMapLoading(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -405,7 +454,7 @@ export default function HomeScreen() {
   });
   const brandRollTranslateY = brandRollAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, -26],
+    outputRange: [0, -28],
   });
   const introTranslateY = screenIntro.interpolate({
     inputRange: [0, 1],
@@ -441,17 +490,18 @@ export default function HomeScreen() {
         locations={[0, 0.55, 1]}
         style={styles.bottomAtmosphere}
       />
-      <Animated.View
-        style={[
-          styles.content,
-          compact ? styles.contentCompact : null,
-          {
-            paddingTop: Math.max(insets.top + 8, compact ? 24 : 30),
-            opacity: screenIntro,
-            transform: [{ translateY: introTranslateY }],
-          },
-        ]}
-      >
+      <Animated.View style={tabEntranceStyle}>
+        <Animated.View
+          style={[
+            styles.content,
+            compact ? styles.contentCompact : null,
+            {
+              paddingTop: Math.max(insets.top + 8, compact ? 24 : 30),
+              opacity: screenIntro,
+              transform: [{ translateY: introTranslateY }],
+            },
+          ]}
+        >
         {/* Header Section */}
         <View style={[styles.header, compact ? styles.headerCompact : null]}>
           <View style={styles.headerBrandRow}>
@@ -459,12 +509,10 @@ export default function HomeScreen() {
             <View style={styles.brandRollViewport}>
               <Animated.View style={[styles.brandRollTrack, { transform: [{ translateY: brandRollTranslateY }] }]}>
                 <View style={styles.headerBrandTextCol}>
-              <Text style={[styles.headerBrandTop, isLight ? { color: '#475569' } : null]}>GARAGE</Text>
-              <Text style={[styles.headerBrandBottom, isLight ? { color: '#0f172a' } : null]}>CONNECT</Text>
+                  <Text style={[styles.headerBrandSingle, isLight ? { color: '#0f172a' } : null]}>OTTO</Text>
                 </View>
                 <View style={styles.headerBrandTextCol}>
-              <Text style={[styles.headerBrandTop, isLight ? { color: '#475569' } : null]}>GARAGE</Text>
-              <Text style={[styles.headerBrandBottom, isLight ? { color: '#0f172a' } : null]}>CONNECT</Text>
+                  <Text style={[styles.headerBrandSingle, isLight ? { color: '#0f172a' } : null]}>OTTO</Text>
                 </View>
               </Animated.View>
             </View>
@@ -527,7 +575,9 @@ export default function HomeScreen() {
             <Text style={[styles.vehicleCardName, isLight ? { color: '#0f172a' } : null]}>
               {vehicleData.alias || vehicleData.modele || '-'}
             </Text>
-            <Text style={[styles.vehicleCardModel, isLight ? { color: '#334155' } : null]}>{vehicleData.modele || '-'}</Text>
+            <Text style={[styles.vehicleCardModel, isLight ? { color: '#334155' } : null]}>
+              {[vehicleData.marque, vehicleData.modele].filter(Boolean).join(' ') || '-'}
+            </Text>
             <View style={[styles.immatBadge, isLight ? styles.immatBadgeLight : null]}>
               <View style={[styles.plateEuroBand, isLight ? styles.plateEuroBandLight : null]}>
                 <Text style={styles.plateEuroStars}>★</Text>
@@ -768,6 +818,33 @@ export default function HomeScreen() {
                         <Text style={[styles.categoryDescription, isLight ? styles.categoryDescriptionLight : null]}>
                           {category.description}
                         </Text>
+                        <View style={[styles.gpsCardMap, isLight ? styles.gpsCardMapLight : null]}>
+                          {gpsMapLoading ? (
+                            <View style={styles.gpsCardMapPlaceholder}>
+                              <ActivityIndicator size="small" color="#F56565" />
+                            </View>
+                          ) : gpsMapCoords ? (
+                            <>
+                              <Image
+                                source={{
+                                  uri: staticOsmMapUrl(gpsMapCoords.lat, gpsMapCoords.lng, 340, 14),
+                                }}
+                                style={StyleSheet.absoluteFill}
+                                resizeMode="cover"
+                              />
+                              <LinearGradient
+                                colors={['transparent', 'rgba(0,0,0,0.62)']}
+                                style={StyleSheet.absoluteFill}
+                                start={{ x: 0.5, y: 0 }}
+                                end={{ x: 0.5, y: 1 }}
+                              />
+                            </>
+                          ) : (
+                            <View style={styles.gpsCardMapPlaceholder}>
+                              <MaterialCommunityIcons name="map-marker-radius" size={22} color="#64748b" />
+                            </View>
+                          )}
+                        </View>
                       </>
                     ) : category.id === 1 ? (
                       <>
@@ -796,6 +873,7 @@ export default function HomeScreen() {
             );
           })}
         </View>
+      </Animated.View>
       </Animated.View>
       <Modal visible={docModal != null} transparent animationType="fade" onRequestClose={() => setDocModal(null)}>
         <View style={styles.docModalBg}>
@@ -851,7 +929,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   brandRollViewport: {
-    height: 30,
+    height: 28,
     overflow: 'hidden',
     justifyContent: 'center',
   },
@@ -861,19 +939,11 @@ const styles = StyleSheet.create({
   headerBrandTextCol: {
     justifyContent: 'center',
   },
-  headerBrandTop: {
-    color: '#d7dee8',
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 2.6,
-    textTransform: 'uppercase',
-  },
-  headerBrandBottom: {
+  headerBrandSingle: {
     color: UI_THEME.textPrimary,
-    fontSize: 23,
+    fontSize: 22,
     fontWeight: '800',
-    letterSpacing: 2.1,
-    marginTop: -1,
+    letterSpacing: 3.2,
     textTransform: 'uppercase',
   },
   notificationBtn: {
@@ -1410,6 +1480,23 @@ const styles = StyleSheet.create({
   },
   categoryDescriptionLight: {
     color: '#64748b',
+  },
+  gpsCardMap: {
+    marginTop: 6,
+    width: '100%',
+    height: 52,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#0f172a',
+  },
+  gpsCardMapLight: {
+    backgroundColor: '#e2e8f0',
+  },
+  gpsCardMapPlaceholder: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15,23,42,0.88)',
   },
   ctBanner: {
     marginTop: 8,

@@ -32,7 +32,7 @@ export async function fetchRoadTripPlanFromAI(userMessage: string, contextHint: 
     throw new Error('Clé API manquante (EXPO_PUBLIC_GOOGLE_API_KEY).');
   }
 
-  const prompt = `Tu es l'assistant road trip de l'app mobile française "Garage Connect".
+  const prompt = `Tu es l'assistant road trip de l'app mobile française "OTTO".
 Contexte utilisateur (position / région si connue): ${contextHint}
 
 Message de l'utilisateur:

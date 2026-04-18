@@ -292,11 +292,11 @@ export default function LoginScreen() {
         automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       >
         <GarageConnectLogo size="hero" />
-        <Text style={[styles.brandLine, isLight ? styles.brandLineLight : null]}>GARAGE CONNECT</Text>
+        <Text style={[styles.brandLine, isLight ? styles.brandLineLight : null]}>OTTO</Text>
         <Text style={[styles.sub, isLight ? styles.subLight : null]}>
           {createMode
             ? 'Créez votre compte avec votre email et votre mot de passe.'
-            : 'Connectez-vous avec votre email pour accéder à votre garage.'}
+            : 'Connectez-vous avec votre email pour retrouver votre espace sur OTTO.'}
         </Text>
 
         <View style={[styles.card, isLight ? styles.cardLight : null]}>

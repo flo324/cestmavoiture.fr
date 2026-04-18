@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "MonAppliVoiture",
+    "name": "OTTO",
     "slug": "garage-connect",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "monapplivoiture",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -37,7 +37,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "L'application utilise votre position pour detecter les trajets en voiture et synchroniser automatiquement le kilometrage."
+          "locationWhenInUsePermission": "OTTO utilise votre position pour détecter les trajets en voiture et synchroniser automatiquement le kilométrage."
         }
       ],
       [
@@ -55,7 +55,7 @@
       [
         "react-native-document-scanner-plugin",
         {
-          "cameraPermission": "L'application utilise la caméra pour scanner automatiquement vos documents."
+          "cameraPermission": "OTTO utilise la caméra pour scanner automatiquement vos documents."
         }
       ]
     ],

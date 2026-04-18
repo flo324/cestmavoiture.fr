@@ -26,11 +26,10 @@ export default function SplashScreen() {
           <GarageConnectLogo size="hero" />
         </Animated.View>
         <Animated.View entering={FadeInUp.delay(400).duration(800)}>
-          <Text style={styles.title}>GARAGE</Text>
-          <Text style={styles.titleAccent}>CONNECT</Text>
+          <Text style={styles.titleOtto}>OTTO</Text>
         </Animated.View>
         <Animated.View entering={FadeIn.delay(900).duration(600)}>
-          <Text style={styles.tagline}>Votre atelier numérique</Text>
+          <Text style={styles.tagline}>Voiture, trajets et suivi au même endroit</Text>
         </Animated.View>
       </Animated.View>
     </View>
@@ -45,21 +44,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   center: { alignItems: 'center', paddingHorizontal: 24 },
-  title: {
+  titleOtto: {
     marginTop: 28,
-    fontSize: 28,
-    fontWeight: '200',
-    color: '#e2e8f0',
-    letterSpacing: 14,
-    textAlign: 'center',
-  },
-  titleAccent: {
-    fontSize: 28,
-    fontWeight: '900',
+    fontSize: 30,
+    fontWeight: '800',
     color: '#00E9F5',
-    letterSpacing: 8,
+    letterSpacing: 12,
     textAlign: 'center',
-    marginTop: 4,
   },
   tagline: {
     marginTop: 20,

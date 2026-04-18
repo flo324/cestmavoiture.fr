@@ -37,7 +37,7 @@ async function fetchDirectPdfUrlFromGemini(modele: string, immat: string): Promi
   if (!apiKey) throw new Error('missing api key');
   const query = buildManualSearchQuery(modele, immat);
   const prompt = [
-    'Tu es un assistant documentation automobile.',
+    "Tu es un assistant documentation automobile dans l'app OTTO.",
     `Vehicule: ${modele || 'inconnu'}`,
     `Immatriculation: ${immat || 'inconnue'}`,
     'Trouve une URL HTTPS DIRECTE vers un fichier PDF du manuel utilisateur (site constructeur, documentation officielle, ou source technique fiable).',
