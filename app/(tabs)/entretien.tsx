@@ -27,6 +27,7 @@ import { useVehicle } from '../../context/VehicleContext';
 import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
 import { normalizeDocumentCapture } from '../../services/documentScan';
+import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
 import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const STORAGE_KEY_CT_FOLDERS = '@ma_voiture_ct_folders_v2';
@@ -239,7 +240,7 @@ function estimateBatterieRisk(b: EntretienModules['batterie']): string {
 }
 
 async function askGeminiWarning(prompt: string): Promise<string> {
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = getGoogleGenerativeApiKeyOptional();
   if (!apiKey) throw new Error('missing gemini key');
 
   const response = await fetch(
@@ -284,7 +285,7 @@ async function generateMaintenanceWithAI(params: {
   immat: string;
   km: number;
 }): Promise<{ summary: string; suggestions: MaintenanceSuggestion[] }> {
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = getGoogleGenerativeApiKeyOptional();
   if (!apiKey) {
     return {
       summary: 'Mode IA distant indisponible. Recommandations standards appliquees.',
@@ -626,8 +627,11 @@ export default function EntretienScreen() {
   };
 
   const findAndSaveManual = async () => {
-    if (!process.env.EXPO_PUBLIC_GOOGLE_API_KEY) {
-      Alert.alert('Cle API', 'Ajoutez EXPO_PUBLIC_GOOGLE_API_KEY ou utilisez une URL PDF directe (champ ci-dessous).');
+    if (!getGoogleGenerativeApiKeyOptional()) {
+      Alert.alert(
+        'Cle API',
+        'Ajoutez EXPO_PUBLIC_GEMINI_API_KEY (cle Google AI Studio : https://aistudio.google.com/apikey) ou une URL PDF directe (champ ci-dessous).'
+      );
       return;
     }
     if (!vehicleData?.modele?.trim()) {

@@ -34,6 +34,7 @@ import {
   parseKmInput,
   updateVehicleRemoteFields,
 } from '../../services/vehiclesDb';
+import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
 import { lookupVehicleByPlate } from '../../services/vehicleLookup';
 
 type VehicleBox = {
@@ -146,7 +147,7 @@ async function callGeminiVehicleBox(
 }
 
 async function detectVehicleBoxWithIA(normUri: string): Promise<VehicleBox | null> {
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = getGoogleGenerativeApiKeyOptional();
   if (!apiKey) return null;
 
   const base64Image = await FileSystem.readAsStringAsync(normUri, {

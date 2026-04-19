@@ -22,6 +22,7 @@ import { AddressAutocompleteInput } from '../../components/AddressAutocompleteIn
 import { SCAN_CASES, STORAGE_DIAG_SCAN } from '../../constants/scanConstants';
 import { normalizeDocumentCapture } from '../../services/documentScan';
 import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
+import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
 import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -214,7 +215,7 @@ Réponds UNIQUEMENT ce JSON strict, sans markdown :
 `.trim();
 
 async function classifyWithGeminiModel(model: string, base64: string): Promise<GeminiClassifyResult> {
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = getGoogleGenerativeApiKeyOptional();
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -225,7 +226,7 @@ async function classifyWithGeminiModel(model: string, base64: string): Promise<G
           {
             role: 'user',
             parts: [
-              { text: prompt },
+              { text: CLASSIFY_PROMPT },
               { inline_data: { mime_type: 'image/jpeg', data: base64 } },
             ],
           },
@@ -255,7 +256,7 @@ async function classifyWithGeminiModel(model: string, base64: string): Promise<G
 }
 
 async function classifyWithGemini(base64: string): Promise<{ suggestedId: number; reason: string }> {
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = getGoogleGenerativeApiKeyOptional();
   if (!apiKey) {
     return { suggestedId: 2, reason: 'Clé API absente — Documents proposés par défaut.' };
   }

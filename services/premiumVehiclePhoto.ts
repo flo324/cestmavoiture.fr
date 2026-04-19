@@ -1,7 +1,8 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
+import { getGoogleGenerativeApiKeyOptional } from './googleGenerativeApiKey';
+
 const REMOVE_BG_API_KEY = process.env.EXPO_PUBLIC_REMOVEBG_API_KEY;
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 const GEMINI_MODEL = 'gemini-1.5-flash';
 
 type StudioPalette = {
@@ -102,6 +103,7 @@ async function removeBackground(uri: string): Promise<string> {
 }
 
 async function detectDominantColor(uri: string): Promise<string | null> {
+  const GEMINI_API_KEY = getGoogleGenerativeApiKeyOptional();
   if (!GEMINI_API_KEY) return null;
   try {
     const base64Image = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });

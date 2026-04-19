@@ -1,6 +1,8 @@
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
 
+import { getGoogleGenerativeApiKeyOptional } from './googleGenerativeApiKey';
+
 type NormalizeOptions = {
   includeBase64?: boolean;
   quality?: number;
@@ -32,7 +34,7 @@ function parseBox(raw: string): Box | null {
 }
 
 async function detectDocumentBoxWithIA(uri: string): Promise<Box | null> {
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = getGoogleGenerativeApiKeyOptional();
   if (!apiKey) return null;
   try {
     const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });

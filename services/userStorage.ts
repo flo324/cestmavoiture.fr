@@ -91,6 +91,12 @@ export async function migrateLegacyKeysForUser(userId: string, baseKeys: string[
 export async function clearCurrentUserLocalData(): Promise<void> {
   const userId = await getCurrentUserId();
   if (!userId) return;
+  try {
+    const { resetTripSegmentsDbCache } = await import('./tripSegmentsDb');
+    resetTripSegmentsDbCache();
+  } catch {
+    /* web / cycle */
+  }
   const allKeys = await AsyncStorage.getAllKeys();
   const scopedPrefix = `${USER_PREFIX}:${userId}:`;
   const migrationFlag = `${MIGRATION_PREFIX}:${userId}`;

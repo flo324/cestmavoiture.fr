@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["location"],
+        "NSMotionUsageDescription": "OTTO utilise les données de mouvement pour repérer la conduite en véhicule et affiner le kilométrage (Core Motion)."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +27,12 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "com.anonymous.MonAppliVoiture"
     },
@@ -34,10 +43,14 @@
     "plugins": [
       "expo-dev-client",
       "expo-router",
+      "expo-task-manager",
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "OTTO utilise votre position pour détecter les trajets en voiture et synchroniser automatiquement le kilométrage."
+          "locationWhenInUsePermission": "OTTO utilise votre position pour détecter les trajets en voiture et synchroniser automatiquement le kilométrage.",
+          "locationAlwaysAndWhenInUsePermission": "OTTO enregistre le kilométrage en arrière-plan pendant vos trajets. Activez « Toujours » pour un suivi continu.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [

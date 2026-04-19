@@ -1,7 +1,9 @@
 /**
  * Itinéraire routier via Google Directions API (tracé réel sur la carte).
- * Activez "Directions API" pour la même clé que EXPO_PUBLIC_GOOGLE_API_KEY (Google Cloud).
+ * Activez "Directions API" pour la clé résolue par getGoogleGenerativeApiKey (EXPO_PUBLIC_GEMINI_API_KEY ou EXPO_PUBLIC_GOOGLE_API_KEY).
  */
+
+import { getGoogleGenerativeApiKey } from './googleGenerativeApiKey';
 
 export type LatLng = { latitude: number; longitude: number };
 
@@ -49,11 +51,16 @@ export function buildOrderedStops(user: LatLng | null, geocoded: LatLng[]): LatL
 
 /**
  * Retourne les points du chemin routier (routes) ou null si indisponible.
- * Utilise EXPO_PUBLIC_GOOGLE_API_KEY (même clé que Gemini si les APIs sont activées).
+ * Même résolution de clé que l’IA (Gemini) : voir googleGenerativeApiKey.ts.
  */
 export async function fetchDrivingPath(stops: LatLng[]): Promise<LatLng[] | null> {
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
-  if (!apiKey?.trim() || stops.length < 2) return null;
+  if (stops.length < 2) return null;
+  let apiKey: string;
+  try {
+    apiKey = getGoogleGenerativeApiKey();
+  } catch {
+    return null;
+  }
 
   const origin = `${stops[0].latitude},${stops[0].longitude}`;
   const dest = `${stops[stops.length - 1].latitude},${stops[stops.length - 1].longitude}`;

@@ -4,25 +4,34 @@ import { createClient } from '@supabase/supabase-js';
 
 /**
  * Supabase local (CLI) : API sur le port 54321.
- * - Web / iOS simulateur : http://127.0.0.1:54321
- * - Émulateur Android : souvent http://10.0.2.2:54321 (machine hôte)
- * - Téléphone physique : IP LAN du PC, ex. http://192.168.1.x:54321
+ * Clé anonyme : Dashboard → Settings → API, ou `supabase status` en local.
  *
- * Clé anonyme : Dashboard Supabase → Settings → API, ou `supabase status` en local.
- * Définir dans .env : EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY
+ * Builds EAS / APK : le .env n’est pas inclus. Définir **EXPO_PUBLIC_SUPABASE_*** sur
+ * https://expo.dev → Projet → Environment variables (profil preview / production).
  */
 const LOCAL_SUPABASE_URL = 'http://127.0.0.1:54321';
 
-const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? LOCAL_SUPABASE_URL).trim();
-const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '').trim();
+const envUrl = String(process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').trim();
+const envKey = String(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '').trim();
 
-if (!supabaseAnonKey) {
-  console.warn(
-    '[Supabase] EXPO_PUBLIC_SUPABASE_ANON_KEY manquante — ajoutez-la dans .env (voir clé anon locale avec `supabase status`).'
-  );
+/** Jamais de clé vide vers createClient ; jamais 127.0.0.1 en build release sans .env (téléphone ≠ PC). */
+const PLACEHOLDER_JWT =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.placeholder';
+
+const resolvedUrl = envUrl || (typeof __DEV__ !== 'undefined' && __DEV__ ? LOCAL_SUPABASE_URL : 'https://placeholder.supabase.co');
+const resolvedKey = envKey || PLACEHOLDER_JWT;
+
+if (!envKey || !envUrl) {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) {
+    console.warn(
+      '[Supabase] Variables EXPO_PUBLIC_SUPABASE_* absentes dans ce build APK — ajoutez-les sur expo.dev → Environment variables puis refaites un build preview.'
+    );
+  } else if (!envKey) {
+    console.warn('[Supabase] EXPO_PUBLIC_SUPABASE_ANON_KEY manquante — voir .env ou `supabase status`.');
+  }
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient(resolvedUrl, resolvedKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -31,5 +40,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(supabaseUrl && supabaseAnonKey);
+  return Boolean(envUrl && envKey);
 }

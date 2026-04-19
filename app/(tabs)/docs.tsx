@@ -12,6 +12,7 @@ import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
 import { normalizeDocumentCapture } from '../../services/documentScan';
 import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
+import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
 import { userGetItem, userSetItem, userRemoveItem } from '../../services/userStorage';
 
 type DocFolder = {
@@ -147,7 +148,7 @@ export default function DocsScreen() {
       : '-';
 
   const callGeminiForBilan = async (payload: Record<string, unknown>) => {
-    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+    const apiKey = getGoogleGenerativeApiKeyOptional();
     if (!apiKey) return '';
     const prompt = [
       'Tu es un expert automobile.',

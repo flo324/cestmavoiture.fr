@@ -22,6 +22,7 @@ import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
 import { normalizeDocumentCapture } from '../../services/documentScan';
 import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
+import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
 import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const STORAGE_KEY_CT_FOLDERS = '@ma_voiture_ct_folders_v2';
@@ -272,7 +273,7 @@ async function analyzeCtWithIA(uri: string): Promise<CtInfoState> {
     reparations: '',
   };
 
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = getGoogleGenerativeApiKeyOptional();
   if (!apiKey) return fallback;
 
   try {

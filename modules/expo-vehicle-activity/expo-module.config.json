@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["ExpoVehicleActivityModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.vehicleactivity.ExpoVehicleActivityModule"]
+  }
+}

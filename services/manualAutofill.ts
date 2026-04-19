@@ -1,4 +1,6 @@
 import { documentDirectory, downloadAsync } from 'expo-file-system/legacy';
+
+import { getGoogleGenerativeApiKeyOptional } from './googleGenerativeApiKey';
 import { userGetItem, userSetItem } from './userStorage';
 
 const STORAGE_KEY_ENTRETIEN_MODULES = '@ma_voiture_entretien_modules_v1';
@@ -33,7 +35,7 @@ function isDisallowedManualUrl(url: string): boolean {
 }
 
 async function fetchDirectPdfUrlFromGemini(modele: string, immat: string): Promise<{ url: string; query: string }> {
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const apiKey = getGoogleGenerativeApiKeyOptional();
   if (!apiKey) throw new Error('missing api key');
   const query = buildManualSearchQuery(modele, immat);
   const prompt = [
