@@ -2,6 +2,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { getGoogleGenerativeApiKeyOptional } from './googleGenerativeApiKey';
+import { fetchGeminiGenerateContentDocumentVision } from './geminiModels';
 
 type NormalizeOptions = {
   includeBase64?: boolean;
@@ -13,8 +14,6 @@ type NormalizeOptions = {
 };
 
 type Box = { x: number; y: number; width: number; height: number };
-
-const DOC_MODEL = 'gemini-2.0-flash';
 
 function clamp01(v: number): number {
   if (!Number.isFinite(v)) return 0;
@@ -48,24 +47,21 @@ async function detectDocumentBoxWithIA(uri: string): Promise<Box | null> {
       'Si aucun document clair: retourne la meilleure estimation possible.',
     ].join('\n');
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${DOC_MODEL}:generateContent?key=${apiKey}`,
+    const res = await fetchGeminiGenerateContentDocumentVision(
+      apiKey,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: 'image/jpeg', data: base64 } },
-              ],
-            },
-          ],
-          generationConfig: { temperature: 0.05, maxOutputTokens: 200 },
-        }),
-      }
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: 'image/jpeg', data: base64 } },
+            ],
+          },
+        ],
+        generationConfig: { temperature: 0.05, maxOutputTokens: 200 },
+      },
+      { maxHttpAttempts: 4 }
     );
     if (!res.ok) return null;
     const json = await res.json();

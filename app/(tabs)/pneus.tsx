@@ -1,11 +1,14 @@
 import * as ImagePicker from 'expo-image-picker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Image, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, BackHandler, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKilometrage } from '../../context/KilometrageContext';
 import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const STORAGE_KEY = '@mes_pneus_v1';
+const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
 
 interface PneuRecord {
   id: string;
@@ -42,6 +45,9 @@ const FORM_STEPS: {
 ];
 
 export default function PneusScreen() {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const allowLeaveRef = useRef(false);
   const kmCtx = useKilometrage();
   const [screenState, setScreenState] = useState<ScreenState>('home');
   const [pneus, setPneus] = useState<PneuRecord[]>([]);
@@ -172,6 +178,38 @@ export default function PneusScreen() {
     }
     setFormStep((prev) => (Math.max(0, prev - 1) as FormStep));
   };
+
+  const goToFolders = useCallback(() => {
+    allowLeaveRef.current = true;
+    void userSetItem(RETURN_TO_FOLDERS_FLAG, '1');
+    router.replace('/(tabs)');
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      allowLeaveRef.current = false;
+      return () => {};
+    }, [])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        goToFolders();
+        return true;
+      });
+      return () => sub.remove();
+    }, [goToFolders])
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowLeaveRef.current) return;
+      event.preventDefault();
+      goToFolders();
+    });
+    return unsubscribe;
+  }, [goToFolders, navigation]);
 
   const skipCurrent = () => {
     if (!isPhotoStep) {

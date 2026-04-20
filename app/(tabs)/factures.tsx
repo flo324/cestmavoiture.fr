@@ -1,23 +1,25 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Dimensions,
   FlatList,
   Image,
   Modal,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const { width, height } = Dimensions.get('window');
 const STORAGE_KEY = '@mes_factures_v5';
+const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
 
 interface ReparationFolder {
   id: string;
@@ -34,6 +36,9 @@ interface ReparationFolder {
 }
 
 export default function FacturesScreen() {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const allowLeaveRef = useRef(false);
   const params = useLocalSearchParams<{
     imageCaptured?: string;
     imageCapturedBase64?: string;
@@ -53,6 +58,18 @@ export default function FacturesScreen() {
           minute: '2-digit',
         })
       : '-';
+  const goToFolders = useCallback(() => {
+    allowLeaveRef.current = true;
+    void userSetItem(RETURN_TO_FOLDERS_FLAG, '1');
+    router.replace('/(tabs)');
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      allowLeaveRef.current = false;
+      return () => {};
+    }, [])
+  );
 
   useEffect(() => {
     const loadData = async () => {
@@ -110,6 +127,29 @@ export default function FacturesScreen() {
     }
   }, [step, capturedImage]);
 
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (step !== 'idle') {
+          setStep('idle');
+          return true;
+        }
+        goToFolders();
+        return true;
+      });
+      return () => sub.remove();
+    }, [goToFolders, step])
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowLeaveRef.current) return;
+      event.preventDefault();
+      goToFolders();
+    });
+    return unsubscribe;
+  }, [goToFolders, navigation]);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -139,7 +179,7 @@ export default function FacturesScreen() {
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="file-search-outline" size={80} color="#bdc3c7" />
             <Text style={styles.emptyText}>Aucune facture.</Text>
-            <Text style={styles.emptySubText}>Utilisez le bouton Scan IA pour commencer.</Text>
+            <Text style={styles.emptySubText}>Utilisez le scan principal depuis l’accueil pour commencer.</Text>
           </View>
         }
         contentContainerStyle={{ padding: 20 }}

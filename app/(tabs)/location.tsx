@@ -1,8 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { useCallback, useState } from 'react';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -15,8 +17,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UI_THEME } from '../../constants/uiTheme';
+import { OttoDossierFrame } from '../../components/OttoDossierFrame';
+import { userSetItem } from '../../services/userStorage';
 import {
   fetchRoadTripPlannerFromForm,
   ROAD_TRIP_STYLE_OPTIONS,
@@ -24,9 +28,25 @@ import {
 } from '../../services/roadTripAI';
 
 type ChatMsg = { role: 'user' | 'assistant'; text: string };
+const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
 
 export default function LocationScreen() {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const allowLeaveRef = useRef(false);
   const insets = useSafeAreaInsets();
+  const goToFolders = useCallback(() => {
+    allowLeaveRef.current = true;
+    void userSetItem(RETURN_TO_FOLDERS_FLAG, '1');
+    router.replace('/(tabs)');
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      allowLeaveRef.current = false;
+      return () => {};
+    }, [])
+  );
 
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -97,32 +117,47 @@ export default function LocationScreen() {
     }
   }, [navRoute]);
 
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (styleMenuOpen) {
+          setStyleMenuOpen(false);
+          return true;
+        }
+        goToFolders();
+        return true;
+      });
+      return () => sub.remove();
+    }, [goToFolders, styleMenuOpen])
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowLeaveRef.current) return;
+      event.preventDefault();
+      goToFolders();
+    });
+    return unsubscribe;
+  }, [goToFolders, navigation]);
+
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
+      <OttoDossierFrame>
         <ScrollView
           style={styles.pageScroll}
-          contentContainerStyle={[styles.pageScrollContent, { paddingTop: Math.max(insets.top, 8) }]}
+          contentContainerStyle={[styles.pageScrollContent, { paddingTop: Math.max(insets.top, 4) }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <LinearGradient
-            colors={['rgba(14,165,233,0.55)', 'rgba(15,23,42,0.95)', UI_THEME.bg]}
-            locations={[0, 0.45, 1]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.plannerBanner}
-          >
-            <View style={styles.plannerBannerIcon}>
-              <MaterialCommunityIcons name="map-marker-path" size={32} color={UI_THEME.cyan} />
-            </View>
-            <Text style={styles.plannerBannerTitle}>Planificateur de Road Trip</Text>
-            <Text style={styles.plannerBannerSub}>
-              Renseignez votre départ, votre arrivée et la durée : l’IA propose un itinéraire clair, jour par jour.
-            </Text>
-          </LinearGradient>
-
           <View style={styles.formCard}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(31,110,255,0.16)', 'rgba(89,199,255,0.1)', 'rgba(255,255,255,0.96)']}
+              locations={[0, 0.6, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.cardBlueGlow}
+            />
             <Text style={styles.formLabel}>D’où partez-vous ?</Text>
             <TextInput
               style={styles.formInput}
@@ -174,12 +209,20 @@ export default function LocationScreen() {
               disabled={!formValid || rtLoading}
               activeOpacity={0.9}
             >
-              <MaterialCommunityIcons name="auto-fix" size={20} color="#061018" />
+              <MaterialCommunityIcons name="auto-fix" size={20} color="#ffffff" />
               <Text style={styles.generateBtnText}>Générer mon itinéraire</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.chatSection}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(31,110,255,0.14)', 'rgba(89,199,255,0.08)', 'rgba(255,255,255,0.97)']}
+              locations={[0, 0.58, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.cardBlueGlow}
+            />
             <View style={styles.chatHeaderRow}>
               <MaterialCommunityIcons name="chat-processing-outline" size={22} color={UI_THEME.cyan} />
               <Text style={styles.chatSectionTitle}>Votre itinéraire</Text>
@@ -205,18 +248,18 @@ export default function LocationScreen() {
             {navRoute ? (
               <View style={styles.navDeepLinks}>
                 <TouchableOpacity style={styles.mapsBtn} onPress={() => void openInGoogleMaps()} activeOpacity={0.9}>
-                  <MaterialCommunityIcons name="map-marker-path" size={20} color="#061018" />
+                  <MaterialCommunityIcons name="map-marker-path" size={20} color="#ffffff" />
                   <Text style={styles.mapsBtnText}>Ouvrir dans Google Maps</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.wazeBtn} onPress={() => void openInWaze()} activeOpacity={0.9}>
-                  <MaterialCommunityIcons name="navigation-variant" size={20} color="#061018" />
+                  <MaterialCommunityIcons name="navigation-variant" size={20} color="#ffffff" />
                   <Text style={styles.wazeBtnText}>Ouvrir dans Waze</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
           </View>
         </ScrollView>
-      </SafeAreaView>
+      </OttoDossierFrame>
 
       <Modal visible={styleMenuOpen} transparent animationType="fade" onRequestClose={() => setStyleMenuOpen(false)}>
         <View style={styles.modalRoot}>
@@ -247,85 +290,59 @@ export default function LocationScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: UI_THEME.bg },
-  safe: { flex: 1 },
+  root: { flex: 1, backgroundColor: '#0b1220' },
   pageScroll: { flex: 1 },
   pageScrollContent: {
-    paddingHorizontal: 10,
-    paddingBottom: 24,
+    paddingHorizontal: 2,
+    paddingBottom: 14,
     flexGrow: 1,
   },
-  plannerBanner: {
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 22,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(0,242,255,0.2)',
-    overflow: 'hidden',
-  },
-  plannerBannerIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: UI_THEME.glass,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  plannerBannerTitle: {
-    color: UI_THEME.textPrimary,
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-  },
-  plannerBannerSub: {
-    color: UI_THEME.textMuted,
-    fontSize: 13,
-    marginTop: 8,
-    lineHeight: 19,
-  },
   formCard: {
-    backgroundColor: UI_THEME.panelSoft,
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.12)',
+    borderColor: 'rgba(148,163,184,0.26)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  cardBlueGlow: {
+    ...StyleSheet.absoluteFillObject,
   },
   formLabel: {
-    color: UI_THEME.textSecondary,
+    color: '#0f172a',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 6,
     marginTop: 4,
   },
   formInput: {
-    backgroundColor: '#0f172a',
+    backgroundColor: '#f8fafc',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === 'ios' ? 12 : 10,
-    color: '#e2e8f0',
+    color: '#0f172a',
     fontSize: 15,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.2)',
+    borderColor: 'rgba(148,163,184,0.28)',
   },
   selectRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#f8fafc',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.2)',
+    borderColor: 'rgba(148,163,184,0.28)',
   },
-  selectValue: { color: '#e2e8f0', fontSize: 15, fontWeight: '700' },
+  selectValue: { color: '#0f172a', fontSize: 15, fontWeight: '700' },
   generateBtn: {
     marginTop: 16,
     borderRadius: 12,
-    backgroundColor: UI_THEME.cyan,
+    backgroundColor: '#1d4ed8',
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -333,13 +350,17 @@ const styles = StyleSheet.create({
     columnGap: 8,
   },
   generateBtnDisabled: { opacity: 0.4 },
-  generateBtnText: { color: '#061018', fontWeight: '900', fontSize: 14 },
+  generateBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
   chatSection: {
     marginTop: 4,
-    backgroundColor: UI_THEME.panelSoft,
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 12,
     minHeight: 200,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+    overflow: 'hidden',
+    position: 'relative',
   },
   chatHeaderRow: {
     flexDirection: 'row',
@@ -348,12 +369,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   chatSectionTitle: {
-    color: UI_THEME.textSecondary,
+    color: '#0f172a',
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   chatSectionSub: {
-    color: UI_THEME.textMuted,
+    color: '#475569',
     fontSize: 12,
     lineHeight: 17,
     marginBottom: 10,
@@ -368,44 +389,44 @@ const styles = StyleSheet.create({
   },
   bubbleUser: {
     alignSelf: 'flex-end',
-    backgroundColor: 'rgba(0,233,245,0.18)',
+    backgroundColor: 'rgba(59,130,246,0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(0,233,245,0.35)',
+    borderColor: 'rgba(59,130,246,0.24)',
   },
   bubbleAssistant: {
     alignSelf: 'flex-start',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#cbd5e1',
   },
-  bubbleUserText: { color: '#e2e8f0', fontSize: 13, lineHeight: 20 },
-  bubbleAssistantText: { color: '#cbd5e1', fontSize: 13, lineHeight: 20 },
+  bubbleUserText: { color: '#0f172a', fontSize: 13, lineHeight: 20 },
+  bubbleAssistantText: { color: '#334155', fontSize: 13, lineHeight: 20 },
   rtLoadingRow: { flexDirection: 'row', alignItems: 'center', columnGap: 8, paddingVertical: 6 },
-  rtLoadingText: { color: '#94a3b8', fontSize: 12 },
+  rtLoadingText: { color: '#64748b', fontSize: 12 },
   navDeepLinks: {
     marginTop: 12,
     gap: 10,
   },
   mapsBtn: {
     borderRadius: 12,
-    backgroundColor: UI_THEME.cyan,
+    backgroundColor: '#1d4ed8',
     paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     columnGap: 8,
   },
-  mapsBtnText: { color: '#061018', fontWeight: '900', fontSize: 13, letterSpacing: 0.2 },
+  mapsBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13, letterSpacing: 0.1 },
   wazeBtn: {
     borderRadius: 12,
-    backgroundColor: '#33CCFF',
+    backgroundColor: '#334155',
     paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     columnGap: 8,
   },
-  wazeBtnText: { color: '#061018', fontWeight: '900', fontSize: 13, letterSpacing: 0.2 },
+  wazeBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13, letterSpacing: 0.1 },
   modalRoot: {
     flex: 1,
   },
@@ -441,7 +462,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   modalOptionActive: {
-    backgroundColor: 'rgba(0,242,255,0.1)',
+    backgroundColor: 'rgba(56,189,248,0.12)',
   },
   modalOptionText: { color: '#e2e8f0', fontSize: 16, fontWeight: '700' },
   modalOptionTextActive: { color: UI_THEME.cyan },

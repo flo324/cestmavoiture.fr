@@ -6,10 +6,12 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { ONBOARDING_STATUS_KEY, type OnboardingStatus } from '../constants/onboarding';
 import { GarageConnectLogo } from '../components/GarageConnectLogo';
 import { useAuth } from '../context/AuthContext';
-import { userGetItem } from '../services/userStorage';
+import { getCurrentUserId, migrateLegacyKeysForUser, userGetItem } from '../services/userStorage';
 
 /**
  * Point d'entrée : charge la session, puis connexion ou animation d'accueil.
+ * Ne pas marquer l'onboarding comme « non fait » quand on est déconnecté : au retour de session,
+ * on relit le stockage (clé scopée + migration depuis l'ancienne clé globale).
  */
 export default function GateScreen() {
   const { isReady, isLoggedIn } = useAuth();
@@ -19,14 +21,19 @@ export default function GateScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!isReady || !isLoggedIn) {
-        if (!cancelled) {
-          setIsOnboardingDone(false);
-          setOnboardingChecked(true);
-        }
+      if (!isReady) return;
+
+      if (!isLoggedIn) {
+        if (!cancelled) setOnboardingChecked(true);
         return;
       }
+
+      if (!cancelled) setOnboardingChecked(false);
       try {
+        const userId = await getCurrentUserId();
+        if (userId) {
+          await migrateLegacyKeysForUser(userId, [ONBOARDING_STATUS_KEY]);
+        }
         const raw = await userGetItem(ONBOARDING_STATUS_KEY);
         if (!raw) {
           if (!cancelled) setIsOnboardingDone(false);

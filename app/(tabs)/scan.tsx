@@ -1,11 +1,14 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Dimensions,
   Image,
+  InteractionManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -19,11 +22,22 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddressAutocompleteInput } from '../../components/AddressAutocompleteInput';
-import { SCAN_CASES, STORAGE_DIAG_SCAN } from '../../constants/scanConstants';
+import {
+  SCAN_CASES,
+  STORAGE_DIAG_SCAN,
+  STORAGE_PENDING_CG_FROM_SCAN,
+  STORAGE_PENDING_CT_FROM_SCAN,
+  STORAGE_PENDING_PERMIS_FROM_SCAN,
+  STORAGE_SCAN_CAMERA_SESSION,
+} from '../../constants/scanConstants';
 import { normalizeDocumentCapture } from '../../services/documentScan';
 import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
+import { useVehicle } from '../../context/VehicleContext';
+import { fetchGeminiGenerateContentDocumentVision } from '../../services/geminiModels';
 import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
-import { userGetItem, userSetItem } from '../../services/userStorage';
+import { extractScanInsights, type ScanAiInsights } from '../../services/scanAiInsights';
+import { syncScanDossierToSupabase } from '../../services/scanDocumentSupabase';
+import { userGetItem, userRemoveItem, userSetItem } from '../../services/userStorage';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -32,8 +46,6 @@ const DOC_TYPES = ['Permis', 'Carte Grise', 'Assurance', 'CT', 'Facture', 'Autre
 const STORAGE_DOCS = '@cestmavoiture_docs_v1';
 const STORAGE_FACTURES = '@mes_factures_v5';
 const STORAGE_ENTRETIEN = '@ma_voiture_entretien_modules_v1';
-const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'] as const;
-
 type Step = 'idle' | 'framing' | 'preview' | 'analyzing' | 'pick' | 'intake';
 
 type EntretienModules = {
@@ -214,26 +226,24 @@ Réponds UNIQUEMENT ce JSON strict, sans markdown :
 {"suggestedId":1,"reason":"une phrase en français","extractedText":"mots importants lus sur le document","confidence":0.0}
 `.trim();
 
-async function classifyWithGeminiModel(model: string, base64: string): Promise<GeminiClassifyResult> {
+async function classifyWithGeminiModel(base64: string): Promise<GeminiClassifyResult> {
   const apiKey = getGoogleGenerativeApiKeyOptional();
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+  if (!apiKey) throw new Error('Gemini HTTP');
+  const response = await fetchGeminiGenerateContentDocumentVision(
+    apiKey,
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: CLASSIFY_PROMPT },
-              { inline_data: { mime_type: 'image/jpeg', data: base64 } },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0.05, maxOutputTokens: 520 },
-      }),
-    }
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: CLASSIFY_PROMPT },
+            { inline_data: { mime_type: 'image/jpeg', data: base64 } },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0.05, maxOutputTokens: 520 },
+    },
+    { maxHttpAttempts: 6 }
   );
   if (!response.ok) throw new Error('Gemini HTTP');
   const json = await response.json();
@@ -262,15 +272,10 @@ async function classifyWithGemini(base64: string): Promise<{ suggestedId: number
   }
 
   let best: GeminiClassifyResult | null = null;
-  for (const model of GEMINI_MODELS) {
-    try {
-      const out = await classifyWithGeminiModel(model, base64);
-      best = out;
-      // si confiance élevée on garde directement
-      if ((out.confidence ?? 0) >= 0.72) break;
-    } catch {
-      // tente le modèle suivant
-    }
+  try {
+    best = await classifyWithGeminiModel(base64);
+  } catch {
+    /* fetchGeminiGenerateContentDocumentVision a déjà essayé tous les modèles / API */
   }
   if (!best) throw new Error('classification failed');
 
@@ -297,15 +302,41 @@ async function classifyWithGemini(base64: string): Promise<{ suggestedId: number
   };
 }
 
+function toFrDate(raw: string): string {
+  const v = String(raw ?? '').trim();
+  if (!v) return '';
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(v)) return v;
+  const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  return v;
+}
+
+function resolveDocTypeFromLabel(label?: string): (typeof DOC_TYPES)[number] | null {
+  const n = normalizeText(String(label ?? ''));
+  if (!n) return null;
+  if (n.includes('permis')) return 'Permis';
+  if (n.includes('carte grise') || n.includes('immatriculation')) return 'Carte Grise';
+  if (n.includes('assurance')) return 'Assurance';
+  if (n.includes('facture')) return 'Facture';
+  if (n.includes('ct') || n.includes('controle technique')) return 'CT';
+  if (n.includes('autre')) return 'Autre';
+  return null;
+}
+
 export default function ScanScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const launchLockRef = useRef(false);
+  const { activeVehicleId } = useVehicle();
+  /** Après navigation vers /ct (ou autre), éviter tout comportement inattendu au prochain passage sur Scan. */
+  const skipNextAutoScanRef = useRef(false);
+  const autoLaunchAttemptedRef = useRef(false);
   const [step, setStep] = useState<Step>('idle');
+  const [autoLaunching, setAutoLaunching] = useState(true);
   const [uri, setUri] = useState('');
   const [base64, setBase64] = useState('');
   const [suggestedId, setSuggestedId] = useState(2);
   const [aiReason, setAiReason] = useState('');
+  const [aiInsights, setAiInsights] = useState<ScanAiInsights | null>(null);
   const [selectedId, setSelectedId] = useState(2);
 
   const [docType, setDocType] = useState<string>(DOC_TYPES[0]);
@@ -329,6 +360,7 @@ export default function ScanScreen() {
     setUri('');
     setBase64('');
     setAiReason('');
+    setAiInsights(null);
     setSuggestedId(2);
     setSelectedId(2);
     setDocType(DOC_TYPES[0]);
@@ -349,17 +381,81 @@ export default function ScanScreen() {
 
   const analyzeCaptured = useCallback(async (capturedBase64: string) => {
     if (!capturedBase64) {
-      Alert.alert('Photo', 'Image sans données — reprenez la photo.');
-      setStep('idle');
+      setSuggestedId(2);
+      setSelectedId(2);
+      setAiReason("Photo reçue mais texte non lisible. Choisissez la section manuellement.");
+      const nowFallback = new Date();
+      setFacDate(
+        `${String(nowFallback.getDate()).padStart(2, '0')}/${String(nowFallback.getMonth() + 1).padStart(2, '0')}/${nowFallback.getFullYear()}`
+      );
+      setStep('pick');
       return;
     }
     setStep('analyzing');
     try {
       const r = await classifyWithGemini(capturedBase64);
+      console.log('[Scan][AI] classification ok', { suggestedId: r.suggestedId });
       setSuggestedId(r.suggestedId);
       setSelectedId(r.suggestedId);
-      setAiReason(r.reason);
+      const insight = await extractScanInsights(capturedBase64, r.suggestedId);
+      console.log('[Scan][AI] insights', {
+        hasInsight: Boolean(insight),
+        confidence: insight?.confidence ?? null,
+        label: insight?.documentLabel ?? '',
+      });
+      setAiInsights(insight);
+      if (insight) {
+        const confidencePct = Math.round((insight.confidence ?? 0) * 100);
+        const aiDetails = [
+          r.reason,
+          insight.summary ? `Résumé: ${insight.summary}` : '',
+          confidencePct > 0 ? `Confiance: ${confidencePct}%` : '',
+        ]
+          .filter(Boolean)
+          .join(' • ');
+        setAiReason(aiDetails.slice(0, 420));
+
+        if (r.suggestedId === 4) {
+          const f = insight.fields?.facture;
+          const fallbackAmount =
+            typeof insight.stats?.amountTtc === 'number' && Number.isFinite(insight.stats.amountTtc)
+              ? String(insight.stats.amountTtc)
+              : '';
+          const fallbackKm =
+            typeof insight.stats?.mileage === 'number' && Number.isFinite(insight.stats.mileage)
+              ? String(Math.round(insight.stats.mileage))
+              : '';
+          setFacTitre((prev) => prev || String(f?.title ?? '').trim() || 'Dépense scannée');
+          setFacGarage((prev) => prev || String(f?.supplier ?? '').trim());
+          setFacDate((prev) => prev || toFrDate(String(f?.date ?? '')));
+          setFacKm((prev) => prev || String(f?.km ?? '').trim() || fallbackKm);
+          setFacPrix((prev) => prev || String(f?.amountTtc ?? '').trim() || fallbackAmount);
+          setFacDetails((prev) => prev || String(f?.details ?? '').trim() || insight.summary);
+        } else if (r.suggestedId === 2) {
+          const resolved = resolveDocTypeFromLabel(insight.documentLabel);
+          if (resolved) setDocType(resolved);
+          const permisName = String(insight.fields?.permis?.holderName ?? '').trim();
+          const plate = String(insight.fields?.carteGrise?.plate ?? '').trim();
+          setDocTitle((prev) => {
+            if (prev) return prev;
+            if (resolved === 'Permis' && permisName) return `Permis - ${permisName}`;
+            if (resolved === 'Carte Grise' && plate) return `Carte grise - ${plate}`;
+            return '';
+          });
+        } else if (r.suggestedId === 1) {
+          const e = insight.fields?.entretien;
+          setEntTitre((prev) => prev || String(e?.title ?? '').trim() || 'Note entretien');
+          setEntNotes((prev) => prev || String(e?.notes ?? '').trim() || insight.summary);
+        } else if (r.suggestedId === 3) {
+          const d = insight.fields?.diagnostic;
+          setDiagTitre((prev) => prev || String(d?.title ?? '').trim() || 'Analyse / diagnostic');
+          setDiagNotes((prev) => prev || String(d?.notes ?? '').trim() || insight.summary);
+        }
+      } else {
+        setAiReason(r.reason);
+      }
     } catch {
+      console.log('[Scan][AI] unavailable');
       setSuggestedId(2);
       setSelectedId(2);
       setAiReason("Analyse indisponible. Choisissez la section qui correspond le mieux.");
@@ -371,44 +467,145 @@ export default function ScanScreen() {
     setStep('pick');
   }, []);
 
-  const takePhoto = useCallback(async () => {
-    const uriScanned = await scanDocumentWithFallback();
-    if (!uriScanned) {
-      // Si l'utilisateur annule la caméra / scanner, on revient à l'accueil
-      // pour éviter de rester bloqué visuellement sur l'onglet Scan.
-      router.replace('/(tabs)');
+  /** True pendant await scan / traitement — évite une double reprise via getPendingResultAsync. */
+  const scanFlowBusyRef = useRef(false);
+
+  const processCapturedUri = useCallback(
+    async (uriScanned: string) => {
+      /** Laisser le retour caméra / scanner se stabiliser (évite pic mémoire + redémarrage Android). */
+      await new Promise<void>((resolve) => {
+        InteractionManager.runAfterInteractions(() => resolve());
+      });
+      setStep('analyzing');
+      /** Scanner natif : déjà recadré — pas de 2ᵉ passe Gemini « smartDocument » (évite jusqu’à 10 appels + OOM). */
+      const normalized = await normalizeDocumentCapture(uriScanned, {
+        includeBase64: true,
+        quality: 0.9,
+        smartDocument: false,
+        autoCropA4: true,
+      });
+      setUri(normalized.uri);
+      setBase64(normalized.base64 ?? '');
+      await analyzeCaptured(normalized.base64 ?? '');
+    },
+    [analyzeCaptured]
+  );
+
+  const tryRecoverPendingCameraCapture = useCallback(async () => {
+    if (Platform.OS !== 'android') return;
+    if (scanFlowBusyRef.current) return;
+    const session = await userGetItem(STORAGE_SCAN_CAMERA_SESSION);
+    if (session !== '1') return;
+    let pending: Awaited<ReturnType<typeof ImagePicker.getPendingResultAsync>>;
+    try {
+      pending = await ImagePicker.getPendingResultAsync();
+    } catch {
       return;
     }
-    const normalized = await normalizeDocumentCapture(uriScanned, {
-      includeBase64: true,
-      quality: 0.95,
-      smartDocument: true,
-      autoCropA4: true,
-    });
-    setUri(normalized.uri);
-    setBase64(normalized.base64 ?? '');
-    await analyzeCaptured(normalized.base64 ?? '');
-  }, [analyzeCaptured, router]);
+    const uri =
+      pending &&
+      typeof pending === 'object' &&
+      'canceled' in pending &&
+      pending.canceled === false
+        ? pending.assets?.[0]?.uri
+        : undefined;
+    if (!uri) {
+      await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION).catch(() => {});
+      return;
+    }
+    await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION).catch(() => {});
+    try {
+      scanFlowBusyRef.current = true;
+      await processCapturedUri(uri);
+    } catch (e) {
+      console.log('[Scan] pending camera recovery failed', e);
+      setStep('idle');
+      Alert.alert(
+        'Erreur de traitement',
+        'La photo n’a pas pu être traitée après retour caméra. Réessayez.'
+      );
+    } finally {
+      scanFlowBusyRef.current = false;
+      await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION).catch(() => {});
+    }
+  }, [processCapturedUri]);
 
   useFocusEffect(
     useCallback(() => {
-      if (step !== 'idle' || launchLockRef.current) return;
+      void tryRecoverPendingCameraCapture();
+    }, [tryRecoverPendingCameraCapture])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      autoLaunchAttemptedRef.current = false;
+      setAutoLaunching(true);
       let cancelled = false;
-      const timer = setTimeout(() => {
-        if (cancelled || launchLockRef.current) return;
-        launchLockRef.current = true;
-        takePhoto()
-          .catch(() => {})
-          .finally(() => {
-            launchLockRef.current = false;
-          });
-      }, 180);
+      const runAutoStart = async () => {
+        // Si un flux précédent demande explicitement de ne pas relancer auto-scan, on respecte.
+        if (skipNextAutoScanRef.current) {
+          skipNextAutoScanRef.current = false;
+          setAutoLaunching(false);
+          return;
+        }
+        if (step !== 'idle' || scanFlowBusyRef.current) {
+          setAutoLaunching(false);
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          InteractionManager.runAfterInteractions(() => resolve());
+        });
+        if (cancelled || step !== 'idle' || scanFlowBusyRef.current || autoLaunchAttemptedRef.current) {
+          setAutoLaunching(false);
+          return;
+        }
+        autoLaunchAttemptedRef.current = true;
+        await takePhoto();
+        if (!cancelled) setAutoLaunching(false);
+      };
+      void runAutoStart();
       return () => {
         cancelled = true;
-        clearTimeout(timer);
       };
     }, [step, takePhoto])
   );
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void tryRecoverPendingCameraCapture();
+    });
+    return () => sub.remove();
+  }, [tryRecoverPendingCameraCapture]);
+
+  async function takePhoto() {
+    scanFlowBusyRef.current = true;
+    await userSetItem(STORAGE_SCAN_CAMERA_SESSION, '1').catch(() => {});
+    try {
+      const uriScanned = await scanDocumentWithFallback();
+      if (!uriScanned) {
+        if (Platform.OS === 'android') {
+          await new Promise<void>((resolve) => setTimeout(resolve, 450));
+          await tryRecoverPendingCameraCapture();
+        }
+        setStep('idle');
+        setAutoLaunching(false);
+        Alert.alert('Scan interrompu', 'Aucune photo reçue. Réessayez le scan.');
+        return;
+      }
+      await processCapturedUri(uriScanned);
+    } catch (e) {
+      console.log('[Scan] capture/normalize failed', e);
+      setStep('idle');
+      Alert.alert(
+        'Erreur de traitement',
+        'La photo n’a pas pu être traitée. Réessayez ou désactivez le recadrage IA si le problème persiste.'
+      );
+    } finally {
+      scanFlowBusyRef.current = false;
+      await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION).catch(() => {});
+    }
+  }
 
   const runAnalysis = useCallback(async () => {
     await analyzeCaptured(base64);
@@ -434,17 +631,33 @@ export default function ScanScreen() {
       switch (c.key) {
         case 'documents': {
           if (docType === 'Permis') {
+            skipNextAutoScanRef.current = true;
+            await userSetItem(STORAGE_PENDING_PERMIS_FROM_SCAN, uri);
+            await syncScanDossierToSupabase({
+              vehicleId: activeVehicleId,
+              docType: 'permis',
+              title: 'Permis (depuis scan)',
+              payload: { imageUri: uri, aiReason, aiInsights, suggestedId, selectedId, flow: 'scan_permis' },
+            });
             router.push({
               pathname: '/scan_permis',
-              params: { imageCaptured: uri, fromGlobalScan: '1' },
+              params: { fromGlobalScan: '1', pendingFromScan: '1', flow: 'create' },
             });
             resetAll();
             return;
           }
           if (docType === 'Carte Grise') {
+            skipNextAutoScanRef.current = true;
+            await userSetItem(STORAGE_PENDING_CG_FROM_SCAN, uri);
+            await syncScanDossierToSupabase({
+              vehicleId: activeVehicleId,
+              docType: 'carte_grise',
+              title: 'Carte grise (depuis scan)',
+              payload: { imageUri: uri, aiReason, aiInsights, suggestedId, selectedId, flow: 'scan_cg' },
+            });
             router.push({
               pathname: '/scan_cg',
-              params: { imageCaptured: uri, fromGlobalScan: '1' },
+              params: { fromGlobalScan: '1', pendingFromScan: '1', flow: 'create' },
             });
             resetAll();
             return;
@@ -467,6 +680,12 @@ export default function ScanScreen() {
           const prev = raw ? (JSON.parse(raw) as DocFolder[]) : [];
           const next = Array.isArray(prev) ? [...prev, newDoc] : [newDoc];
           await userSetItem(STORAGE_DOCS, JSON.stringify(next));
+          await syncScanDossierToSupabase({
+            vehicleId: activeVehicleId,
+            docType: `document_${docType}`,
+            title,
+            payload: { folder: newDoc, aiReason, aiInsights, suggestedId, selectedId },
+          });
           Alert.alert('Enregistré', 'Document ajouté à Mes documents.');
           router.push('/docs');
           break;
@@ -490,6 +709,12 @@ export default function ScanScreen() {
           const prev = raw ? (JSON.parse(raw) as FactureRow[]) : [];
           const next = Array.isArray(prev) ? [row, ...prev] : [row];
           await userSetItem(STORAGE_FACTURES, JSON.stringify(next));
+          await syncScanDossierToSupabase({
+            vehicleId: activeVehicleId,
+            docType: 'facture',
+            title: row.titre,
+            payload: { row, aiReason, aiInsights, suggestedId, selectedId },
+          });
           Alert.alert('Enregistré', 'Dépense enregistrée.');
           router.push('/factures');
           break;
@@ -524,6 +749,12 @@ export default function ScanScreen() {
             .filter(Boolean)
             .join('\n');
           await userSetItem(STORAGE_ENTRETIEN, JSON.stringify(modules));
+          await syncScanDossierToSupabase({
+            vehicleId: activeVehicleId,
+            docType: 'entretien_scan',
+            title: entTitre.trim() || 'Note entretien (scan)',
+            payload: { line, imageUri: uri, aiReason, aiInsights, suggestedId, selectedId },
+          });
           Alert.alert('Enregistré', 'Note ajoutée au carnet (section Phares / commentaire).');
           router.push('/entretien');
           break;
@@ -542,14 +773,28 @@ export default function ScanScreen() {
           const prev = raw ? (JSON.parse(raw) as DiagScanItem[]) : [];
           const next = Array.isArray(prev) ? [item, ...prev] : [item];
           await userSetItem(STORAGE_DIAG_SCAN, JSON.stringify(next));
+          await syncScanDossierToSupabase({
+            vehicleId: activeVehicleId,
+            docType: 'diagnostic_scan',
+            title: item.titre,
+            payload: { item, aiReason, aiInsights, suggestedId, selectedId },
+          });
           Alert.alert('Enregistré', 'Élément enregistré dans Diagnostics.');
           router.push('/diagnostics');
           break;
         }
         case 'ct': {
+          skipNextAutoScanRef.current = true;
+          await userSetItem(STORAGE_PENDING_CT_FROM_SCAN, uri);
+          await syncScanDossierToSupabase({
+            vehicleId: activeVehicleId,
+            docType: 'controle_technique',
+            title: 'CT — analyse après scan',
+            payload: { imageUri: uri, aiReason, aiInsights, suggestedId, selectedId, pendingRoute: '/ct' },
+          });
           router.push({
             pathname: '/ct',
-            params: { imageCaptured: uri, fromGlobalScan: '1' },
+            params: { fromGlobalScan: '1', pendingFromScan: '1' },
           });
           resetAll();
           return;
@@ -750,21 +995,24 @@ export default function ScanScreen() {
           { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8 },
         ]}
       >
-        {step === 'idle' && (
-          <View style={styles.centerCol}>
-            <Text style={styles.title}>Scan intelligent</Text>
-            <Text style={styles.subtitle}>
-              Lancez une nouvelle capture pour classer automatiquement votre document.
-            </Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={takePhoto} activeOpacity={0.9}>
-              <MaterialCommunityIcons name="camera" size={22} color="#0b0f14" />
-              <Text style={styles.primaryBtnText}> DÉMARRER LE SCAN</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.ghostBtn} onPress={() => router.replace('/(tabs)')}>
-              <Text style={styles.ghostBtnText}>RETOUR ACCUEIL</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {step === 'idle' &&
+          (autoLaunching ? (
+            <View style={styles.centerCol} />
+          ) : (
+            <View style={styles.centerCol}>
+              <Text style={styles.title}>Scan intelligent</Text>
+              <Text style={styles.subtitle}>
+                Lancez une nouvelle capture pour classer automatiquement votre document.
+              </Text>
+              <TouchableOpacity style={styles.primaryBtn} onPress={takePhoto} activeOpacity={0.9}>
+                <MaterialCommunityIcons name="camera" size={22} color="#0b0f14" />
+                <Text style={styles.primaryBtnText}> DÉMARRER LE SCAN</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ghostBtn} onPress={() => router.replace({ pathname: '/(tabs)' } as any)}>
+                <Text style={styles.ghostBtnText}>RETOUR ACCUEIL</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
 
         {step === 'preview' && uri ? (
           <ScrollView contentContainerStyle={styles.previewBox} keyboardDismissMode="on-drag" scrollEnabled={false}>

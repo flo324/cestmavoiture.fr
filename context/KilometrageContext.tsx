@@ -2,7 +2,7 @@ import '../tasks/kmLocationTasks';
 
 import * as Location from 'expo-location';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, type AppStateStatus, Platform } from 'react-native';
+import { AppState, type AppStateStatus, InteractionManager, Platform } from 'react-native';
 
 import { useAuth } from './AuthContext';
 import {
@@ -145,13 +145,15 @@ export const KilometrageProvider = ({ children }: { children: React.ReactNode })
 
     const run = async () => {
       try {
-        const fg = await Location.requestForegroundPermissionsAsync();
+        let fg = await Location.getForegroundPermissionsAsync();
+        if (fg.status === 'undetermined') {
+          fg = await Location.requestForegroundPermissionsAsync();
+        }
         if (fg.status !== 'granted') {
           setIsTracking(false);
           return;
         }
 
-        await Location.requestBackgroundPermissionsAsync().catch(() => undefined);
         await hydrateVehicleActivityFromCache();
 
         if (isKmBackgroundTasksRegistered) {
@@ -175,8 +177,11 @@ export const KilometrageProvider = ({ children }: { children: React.ReactNode })
       }
     };
 
-    void run();
+    const task = InteractionManager.runAfterInteractions(() => {
+      void run();
+    });
     return () => {
+      task.cancel?.();
       watchSub?.remove();
     };
   }, []);

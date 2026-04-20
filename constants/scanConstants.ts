@@ -9,3 +9,12 @@ export const SCAN_CASES = [
 
 export const STORAGE_DIAG_SCAN = '@diagnostics_scan_items_v1';
 export const STORAGE_KM_MEMOS = '@km_scan_memos_v1';
+
+/** Image CT depuis le scan global : ne pas passer file:// dans l’URL (troncature / encodage). */
+export const STORAGE_PENDING_CT_FROM_SCAN = '@otto_pending_ct_image_uri_v1';
+
+export const STORAGE_PENDING_PERMIS_FROM_SCAN = '@otto_pending_permis_image_uri_v1';
+export const STORAGE_PENDING_CG_FROM_SCAN = '@otto_pending_cg_image_uri_v1';
+
+/** Session caméra / scanner : si l’app Android est recyclée, on récupère le résultat via ImagePicker.getPendingResultAsync. */
+export const STORAGE_SCAN_CAMERA_SESSION = '@otto_scan_camera_session_v1';

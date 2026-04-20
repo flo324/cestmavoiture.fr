@@ -1,14 +1,13 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useKilometrage } from '../../context/KilometrageContext';
-import { UI_THEME } from '../../constants/uiTheme';
 import { STORAGE_KM_MEMOS } from '../../constants/scanConstants';
-import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
-import { userGetItem } from '../../services/userStorage';
+import { OttoDossierFrame } from '../../components/OttoDossierFrame';
+import { userGetItem, userSetItem } from '../../services/userStorage';
 
 /** Odomètre total : chaîne type "190 000" → nombre, sinon 0 */
 function parseOdometerKm(raw: string | undefined | null): number {
@@ -44,10 +43,26 @@ type BubbleDef = {
 };
 
 type KmMemo = { id: string; titre: string; note: string; imageUri: string; createdAt: number };
+const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
 
 export default function KilometrageScreen() {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const allowLeaveRef = useRef(false);
   const ctx = useKilometrage();
   const [memos, setMemos] = useState<KmMemo[]>([]);
+  const goToFolders = useCallback(() => {
+    allowLeaveRef.current = true;
+    void userSetItem(RETURN_TO_FOLDERS_FLAG, '1');
+    router.replace('/(tabs)');
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      allowLeaveRef.current = false;
+      return () => {};
+    }, [])
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -70,6 +85,25 @@ export default function KilometrageScreen() {
         cancelled = true;
       };
     }, [])
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowLeaveRef.current) return;
+      event.preventDefault();
+      goToFolders();
+    });
+    return unsubscribe;
+  }, [goToFolders, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        goToFolders();
+        return true;
+      });
+      return () => sub.remove();
+    }, [goToFolders])
   );
 
   const totalKm = useMemo(() => parseOdometerKm(ctx?.km), [ctx?.km]);
@@ -118,24 +152,24 @@ export default function KilometrageScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <OttoDossierFrame>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={false}
+        scrollEnabled
       >
-        <PremiumHeroBanner variant="km" height={140} alignCenter>
-          <View style={styles.heroIconWrap}>
-            <MaterialCommunityIcons name="speedometer" size={28} color={UI_THEME.cyan} />
-          </View>
-          <Text style={styles.title}>Kilométrage</Text>
-          <Text style={styles.subtitle}>Suivi précis des distances et stats de conduite</Text>
-        </PremiumHeroBanner>
-
         <View style={styles.grid}>
           {bubbles.map((b, idx) => (
             <Pressable key={b.key} style={({ pressed }) => [styles.bubble, pressed && styles.scaleDown]}>
-              <MaterialCommunityIcons name={b.icon} size={28} color="#fff" />
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(59,130,246,0.11)', 'rgba(148,163,184,0.08)', 'rgba(255,255,255,0.98)']}
+                locations={[0, 0.58, 1]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.bubbleBlueNuance}
+              />
+              <MaterialCommunityIcons name={b.icon} size={28} color="#1d4ed8" />
               <Text style={styles.bubbleLabel}>{b.label}</Text>
               <Text style={styles.bubbleValue}>{formatKmFr(b.value)}</Text>
               <Text style={styles.bubbleUnit}>{b.unit ?? 'km'}</Text>
@@ -163,40 +197,16 @@ export default function KilometrageScreen() {
           </View>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
+    </OttoDossierFrame>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: UI_THEME.bg },
   scrollContent: {
-    paddingBottom: Platform.OS === 'web' ? 24 : 100,
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'web' ? 16 : 8,
+    paddingBottom: Platform.OS === 'web' ? 16 : 22,
+    paddingTop: 4,
   },
-  heroIconWrap: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,242,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(0,242,255,0.4)',
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 23,
-    fontWeight: '900',
-    color: UI_THEME.textPrimary,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#cbd5e1',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  scaleDown: { transform: [{ scale: 0.98 }] },
+  scaleDown: { transform: [{ scale: 0.992 }] },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -207,63 +217,66 @@ const styles = StyleSheet.create({
     width: '48%',
     aspectRatio: 1,
     maxWidth: Platform.OS === 'web' ? 170 : undefined,
-    backgroundColor: UI_THEME.glass,
+    backgroundColor: '#ffffff',
     borderRadius: 20,
     padding: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 0.5,
-    borderColor: UI_THEME.cyanBorder,
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.32)',
+    overflow: 'hidden',
+    position: 'relative',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: '#0f172a',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 6,
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
       },
-      android: { elevation: 6 },
+      android: { elevation: 3 },
       default: {},
     }),
   },
+  bubbleBlueNuance: {
+    ...StyleSheet.absoluteFillObject,
+  },
   bubbleLabel: {
-    color: '#bdc3c7',
-    fontSize: 12,
-    fontWeight: 'bold',
-    textTransform: 'uppercase',
+    color: '#475569',
+    fontSize: 11,
+    fontWeight: '700',
     marginTop: 6,
   },
   bubbleValue: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
+    color: '#1e293b',
+    fontSize: 21,
+    fontWeight: '700',
     marginTop: 4,
   },
   bubbleUnit: {
-    color: '#95a5a6',
+    color: '#64748b',
     fontSize: 11,
     marginTop: 2,
   },
   memoBlock: { marginTop: 20 },
   memoTitle: {
-    color: '#94a3b8',
+    color: '#1e293b',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
   memoCard: {
     flexDirection: 'row',
-    backgroundColor: UI_THEME.glass,
+    backgroundColor: '#ffffff',
     borderRadius: 14,
     padding: 10,
     marginBottom: 10,
-    borderWidth: 0.5,
-    borderColor: UI_THEME.goldBorder,
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.28)',
     gap: 10,
   },
   memoThumb: { width: 72, height: 72, borderRadius: 8, backgroundColor: '#0f172a' },
-  memoTitre: { color: '#e2e8f0', fontWeight: '700', fontSize: 14 },
-  memoNote: { color: '#cbd5e1', fontSize: 12, marginTop: 4, lineHeight: 18 },
-  memoDate: { color: '#64748b', fontSize: 10, marginTop: 6 },
+  memoTitre: { color: '#0f172a', fontWeight: '700', fontSize: 14 },
+  memoNote: { color: '#475569', fontSize: 12, marginTop: 4, lineHeight: 18 },
+  memoDate: { color: '#3b82f6', fontSize: 10, marginTop: 6 },
 });

@@ -1,9 +1,9 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
+import { generativeLanguageGenerateUrl, GEMINI_MODEL_1_5_PRO } from './geminiModels';
 import { getGoogleGenerativeApiKeyOptional } from './googleGenerativeApiKey';
 
 const REMOVE_BG_API_KEY = process.env.EXPO_PUBLIC_REMOVEBG_API_KEY;
-const GEMINI_MODEL = 'gemini-1.5-flash';
 
 type StudioPalette = {
   center: string;
@@ -113,25 +113,22 @@ async function detectDominantColor(uri: string): Promise<string | null> {
       'Aucune phrase, aucun markdown, uniquement #RRGGBB.',
     ].join('\n');
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
-              ],
-            },
-          ],
-          generationConfig: { temperature: 0.05 },
-        }),
-      }
-    );
+    const response = await fetch(generativeLanguageGenerateUrl(GEMINI_MODEL_1_5_PRO, GEMINI_API_KEY), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
+            ],
+          },
+        ],
+        generationConfig: { temperature: 0.05 },
+      }),
+    });
 
     if (!response.ok) return null;
     const json = await response.json();

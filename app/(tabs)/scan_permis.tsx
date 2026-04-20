@@ -1,194 +1,79 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Trash2 } from 'lucide-react-native';
+﻿import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, BackHandler, Easing, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AddressAutocompleteInput } from '../../components/AddressAutocompleteInput';
-import { UI_THEME } from '../../constants/uiTheme';
-import { normalizeDocumentCapture } from '../../services/documentScan';
-import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, BackHandler, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+
+import { OttoDossierFrame } from '../../components/OttoDossierFrame';
+import { STORAGE_PENDING_PERMIS_FROM_SCAN } from '../../constants/scanConstants';
+import {
+  deleteScanDocFromSupabase,
+  fetchScanDocsFromSupabase,
+  upsertSingleScanDocToSupabase,
+} from '../../services/scanDocumentSupabase';
 import { userGetItem, userRemoveItem, userSetItem } from '../../services/userStorage';
 
+const STORAGE_KEY_PERMIS = '@ma_voiture_permis_data';
+
+type PermisDoc = {
+  imageUri: string;
+  createdAt: string;
+  updatedAt: string;
+  supabaseId?: string | null;
+};
+
+function nowFr(): string {
+  return new Date().toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function payloadImage(payload: Record<string, unknown>): string {
+  const imageUri = payload?.imageUri;
+  if (typeof imageUri === 'string' && imageUri.trim()) return imageUri.trim();
+  const image = payload?.image;
+  if (typeof image === 'string' && image.trim()) return image.trim();
+  return '';
+}
+
 export default function ScanPermis() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
   const allowLeaveRef = useRef(false);
-  const goDocs = () => {
-    allowLeaveRef.current = true;
-    router.replace('/docs');
-  };
-  const STORAGE_KEY_PERMIS = '@ma_voiture_permis_data';
+  const [doc, setDoc] = useState<PermisDoc | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+
   const params = useLocalSearchParams<{
-    imageUri?: string;
     imageCaptured?: string;
     fromGlobalScan?: string;
-    nom?: string;
-    prenom?: string;
-    adresse?: string;
-    dateObtention?: string;
-    numeroPermis?: string;
-    flow?: string;
+    pendingFromScan?: string;
   }>();
-  const flowMode = typeof params.flow === 'string' ? params.flow : 'view';
 
-  const [imageUri, setImageUri] = useState('');
-  const [modalVisible, setModalVisible] = useState(false);
-  const [nom, setNom] = useState('');
-  const [prenom, setPrenom] = useState('');
-  const [adresse, setAdresse] = useState('');
-  const [ville, setVille] = useState('');
-  const [departement, setDepartement] = useState('');
-  const [flow, setFlow] = useState<'create' | 'view'>(flowMode === 'create' ? 'create' : 'view');
-  const [createStep, setCreateStep] = useState<1 | 2 | 3>(1);
-  const [hasSavedDossier, setHasSavedDossier] = useState(false);
-  const [createdAt, setCreatedAt] = useState('');
-  const [updatedAt, setUpdatedAt] = useState('');
-  const currentStep = flow === 'create' ? createStep : hasSavedDossier ? 3 : 1;
-  const stepAnimOpacity = useRef(new Animated.Value(1)).current;
-  const stepAnimTranslateX = useRef(new Animated.Value(0)).current;
-  const transitionKey = `${flow}-${flow === 'create' ? createStep : hasSavedDossier ? 'saved' : 'empty'}`;
-  const prevTransitionKeyRef = useRef(transitionKey);
-  const resetCreateForm = () => {
-    setImageUri('');
-    setNom('');
-    setPrenom('');
-    setAdresse('');
-    setVille('');
-    setDepartement('');
-    setCreatedAt('');
-    setUpdatedAt('');
-    setCreateStep(1);
-  };
-  const formatNow = () =>
-    new Date().toLocaleString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-  useEffect(() => {
-    const loadStored = async () => {
-      if (flowMode === 'create') {
-        resetCreateForm();
-        setHasSavedDossier(false);
-        return;
-      }
-      const raw = await userGetItem(STORAGE_KEY_PERMIS);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { image?: string; info?: Record<string, string>; meta?: Record<string, string> };
-      setImageUri(parsed.image || '');
-      setNom(parsed.info?.nom || '');
-      setPrenom(parsed.info?.prenom || '');
-      setAdresse(parsed.info?.adresse || '');
-      setVille(parsed.info?.ville || '');
-      setDepartement(parsed.info?.departement || '');
-      setCreatedAt(parsed.meta?.createdAt || '');
-      setUpdatedAt(parsed.meta?.updatedAt || '');
-      setHasSavedDossier(Boolean(parsed.image || parsed.info?.nom || parsed.info?.prenom));
-    };
-    loadStored();
-  }, []);
-
-  useEffect(() => {
-    const saveIncomingScan = async () => {
-      const incomingUri = typeof params.imageCaptured === 'string' ? params.imageCaptured : '';
-      const fromGlobal = typeof params.fromGlobalScan === 'string' ? params.fromGlobalScan : '';
-      console.log('[scan_permis] incoming params', {
-        hasUri: !!incomingUri,
-        fromGlobal,
-      });
-      if (!incomingUri || fromGlobal !== '1') return;
-      const existingRaw = await userGetItem(STORAGE_KEY_PERMIS);
-      const existing = existingRaw ? (JSON.parse(existingRaw) as { meta?: Record<string, string> }) : null;
-      const now = formatNow();
-
-      // Affiche et sauvegarde la photo immédiatement, sans IA.
-      setImageUri(incomingUri);
-      await userSetItem(
-        STORAGE_KEY_PERMIS,
-        JSON.stringify({
-          image: incomingUri,
-          info: {
-            nom: nom || '',
-            prenom: prenom || '',
-            adresse: adresse || '',
-            ville: ville || '',
-            departement: departement || '',
-          },
-          meta: {
-            createdAt: existing?.meta?.createdAt || now,
-            updatedAt: now,
-          },
-        })
-      );
-      setCreatedAt(existing?.meta?.createdAt || now);
-      setUpdatedAt(now);
-      console.log('[scan_permis] saved to storage', { key: STORAGE_KEY_PERMIS, uri: incomingUri });
-    };
-    saveIncomingScan().catch(() => {});
-  }, [params.imageCaptured, params.fromGlobalScan, nom, prenom, adresse, ville, departement]);
-
-  useEffect(() => {
-    if (typeof params.imageUri === 'string') setImageUri(params.imageUri);
-    if (typeof params.nom === 'string') setNom(params.nom);
-    if (typeof params.prenom === 'string') setPrenom(params.prenom);
-    if (typeof params.adresse === 'string') setAdresse(params.adresse);
-  }, [params]);
-
-  const handleScanPermis = async () => {
-    const uriScanned = await scanDocumentWithFallback();
-    if (!uriScanned) {
-      Alert.alert('Permission requise', 'Autorisez la camera pour continuer.');
-      return;
-    }
-    const normalized = await normalizeDocumentCapture(uriScanned, {
-      quality: 0.94,
-      smartDocument: true,
-      autoCropA4: true,
-    });
-    setImageUri(normalized.uri);
-    setCreateStep(2);
-  };
+  const goDocs = useCallback(() => {
+    allowLeaveRef.current = true;
+    router.replace('/docs');
+  }, [router]);
 
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
+      allowLeaveRef.current = false;
+      return () => {};
+    }, [])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (flow === 'create' && createStep > 1) {
-          setCreateStep((s) => (Math.max(1, s - 1) as 1 | 2 | 3));
-          return true;
-        }
         goDocs();
         return true;
       });
       return () => sub.remove();
-    }, [flow, createStep])
+    }, [goDocs])
   );
-
-  useEffect(() => {
-    if (prevTransitionKeyRef.current === transitionKey) return;
-    prevTransitionKeyRef.current = transitionKey;
-
-    stepAnimOpacity.setValue(0);
-    stepAnimTranslateX.setValue(16);
-    Animated.parallel([
-      Animated.timing(stepAnimOpacity, {
-        toValue: 1,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(stepAnimTranslateX, {
-        toValue: 0,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [transitionKey, stepAnimOpacity, stepAnimTranslateX]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (event) => {
@@ -197,420 +82,325 @@ export default function ScanPermis() {
       goDocs();
     });
     return unsubscribe;
-  }, [navigation]);
+  }, [goDocs, navigation]);
 
-  const saveNow = async () => {
-    try {
-      if (!imageUri) {
-        Alert.alert('Scan requis', 'Commencez par scanner votre permis.');
-        return;
-      }
-      await userSetItem(
-        STORAGE_KEY_PERMIS,
-        JSON.stringify({
-          image: imageUri || '',
-          info: {
-            nom: nom || '',
-            prenom: prenom || '',
-            adresse: adresse || '',
-            ville: ville || '',
-            departement: departement || '',
-          },
-          meta: {
-            createdAt: createdAt || formatNow(),
-            updatedAt: formatNow(),
-          },
-        })
-      );
-      if (!createdAt) setCreatedAt(formatNow());
-      setUpdatedAt(formatNow());
-      setHasSavedDossier(true);
-      Alert.alert('Enregistré', 'Votre dossier permis a bien été enregistré.', [
-        { text: 'OK', onPress: goDocs },
-      ]);
-    } catch (error) {
-      console.log('[scan_permis] manual save failed', error);
-      Alert.alert('Erreur', "Impossible d'enregistrer.");
+  const persistDoc = useCallback(async (next: PermisDoc) => {
+    setDoc(next);
+    await userSetItem(STORAGE_KEY_PERMIS, JSON.stringify(next));
+    const supabaseId = await upsertSingleScanDocToSupabase({
+      vehicleId: null,
+      docType: 'permis',
+      title: 'Permis de conduire',
+      payload: {
+        imageUri: next.imageUri,
+        createdAt: next.createdAt,
+        updatedAt: next.updatedAt,
+      },
+    });
+    if (supabaseId && next.supabaseId !== supabaseId) {
+      const synced = { ...next, supabaseId };
+      setDoc(synced);
+      await userSetItem(STORAGE_KEY_PERMIS, JSON.stringify(synced));
     }
-  };
+  }, []);
 
-  const confirmDeleteFolder = () => {
-    Alert.alert(
-      'Supprimer le dossier ?',
-      'Êtes-vous sûr de vouloir supprimer définitivement ce dossier ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await userRemoveItem(STORAGE_KEY_PERMIS);
-              setImageUri('');
-              setNom('');
-              setPrenom('');
-              setAdresse('');
-              setVille('');
-              setDepartement('');
-              setCreatedAt('');
-              setUpdatedAt('');
-              setHasSavedDossier(false);
-            } catch (error) {
-              console.log('[scan_permis] delete failed', error);
-            }
-          },
-        },
-      ]
-    );
-  };
+  useEffect(() => {
+    (async () => {
+      try {
+        const localRaw = await userGetItem(STORAGE_KEY_PERMIS);
+        let localDoc: PermisDoc | null = null;
+        if (localRaw) {
+          const parsed = JSON.parse(localRaw) as Partial<PermisDoc>;
+          if (typeof parsed.imageUri === 'string' && parsed.imageUri.trim()) {
+            localDoc = {
+              imageUri: parsed.imageUri.trim(),
+              createdAt: parsed.createdAt || nowFr(),
+              updatedAt: parsed.updatedAt || parsed.createdAt || nowFr(),
+              supabaseId: parsed.supabaseId ?? null,
+            };
+          }
+        }
+
+        const remote = await fetchScanDocsFromSupabase({ docType: 'permis', vehicleId: null });
+        if (remote.length > 0) {
+          const first = remote[0];
+          const uri = payloadImage((first.payload ?? {}) as Record<string, unknown>);
+          if (uri) {
+            const remoteDoc: PermisDoc = {
+              imageUri: uri,
+              createdAt: first.created_at || nowFr(),
+              updatedAt: first.updated_at || first.created_at || nowFr(),
+              supabaseId: first.id,
+            };
+            setDoc(remoteDoc);
+            await userSetItem(STORAGE_KEY_PERMIS, JSON.stringify(remoteDoc));
+            return;
+          }
+        }
+
+        setDoc(localDoc);
+      } catch {
+        setDoc(null);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const fromGlobal = params.fromGlobalScan === '1';
+      if (!fromGlobal) return;
+
+      let incomingUri = '';
+      if (params.pendingFromScan === '1') {
+        const pending = await userGetItem(STORAGE_PENDING_PERMIS_FROM_SCAN);
+        if (typeof pending === 'string' && pending.trim()) incomingUri = pending.trim();
+        if (incomingUri) await userRemoveItem(STORAGE_PENDING_PERMIS_FROM_SCAN);
+      }
+      if (!incomingUri && typeof params.imageCaptured === 'string' && params.imageCaptured.trim()) {
+        incomingUri = params.imageCaptured.trim();
+      }
+      if (!incomingUri) return;
+
+      const existingCreatedAt = doc?.createdAt || nowFr();
+      const next: PermisDoc = {
+        imageUri: incomingUri,
+        createdAt: existingCreatedAt,
+        updatedAt: nowFr(),
+        supabaseId: doc?.supabaseId ?? null,
+      };
+      await persistDoc(next);
+      Alert.alert('Permis enregistré', 'Photo du permis sauvegardée avec succès.');
+    })();
+  }, [doc?.createdAt, doc?.supabaseId, params.fromGlobalScan, params.imageCaptured, params.pendingFromScan, persistDoc]);
+
+  const removePermis = useCallback(async () => {
+    try {
+      if (doc?.supabaseId) {
+        await deleteScanDocFromSupabase(doc.supabaseId);
+      } else {
+        const all = await fetchScanDocsFromSupabase({ docType: 'permis', vehicleId: null });
+        await Promise.all(all.map((d) => deleteScanDocFromSupabase(d.id)));
+      }
+      await userRemoveItem(STORAGE_KEY_PERMIS);
+      setDoc(null);
+    } catch {
+      Alert.alert('Erreur', 'Impossible de supprimer le permis.');
+    }
+  }, [doc?.supabaseId]);
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: insets.top + 8 }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
-    >
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={{ paddingBottom: 30, flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        scrollEnabled={false}
-      >
-        <Animated.View
-          style={{
-            opacity: stepAnimOpacity,
-            transform: [{ translateX: stepAnimTranslateX }],
-          }}
-        >
-          <View style={styles.topBar}>
-            <TouchableOpacity onPress={goDocs} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <MaterialCommunityIcons name="arrow-left" size={24} color="#00F2FF" />
-            </TouchableOpacity>
-            <View style={styles.headerCenter}>
-              <View style={styles.headerIconWrap}>
-                <MaterialCommunityIcons name="card-account-details-outline" size={20} color="#00F2FF" />
+    <OttoDossierFrame>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {doc?.imageUri ? (
+          <>
+            <View style={styles.headerCard}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(31,110,255,0.14)', 'rgba(89,199,255,0.08)', 'rgba(255,255,255,0.97)']}
+                locations={[0, 0.58, 1]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.headerIcon}>
+                <MaterialCommunityIcons name="card-account-details-outline" size={20} color="#0284c7" />
               </View>
               <Text style={styles.title}>Permis de conduire</Text>
-              <Text style={styles.headerSubtitle}>Dossier conducteur premium</Text>
+              <Text style={styles.subTitle}>Un seul document par compte</Text>
             </View>
-            <View style={{ width: 24 }} />
-          </View>
-          <View style={styles.stepsWrap}>
-            {[1, 2, 3].map((s) => (
-              <View key={s} style={styles.stepItem}>
-                <View style={[styles.stepDot, currentStep >= s && styles.stepDotActive]}>
-                  <Text style={[styles.stepDotText, currentStep >= s && styles.stepDotTextActive]}>{s}</Text>
-                </View>
-                <Text style={[styles.stepLabel, currentStep >= s && styles.stepLabelActive]}>
-                  {s === 1 ? 'Scanner' : s === 2 ? 'Renseigner' : 'Enregistrer'}
-                </Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${(currentStep / 3) * 100}%` }]} />
-          </View>
-          <View style={styles.stepHintCard}>
-            <Text style={styles.stepHintTitle}>Étape {currentStep}</Text>
-            <Text style={styles.stepHintText}>
-              {flow === 'create'
-                ? createStep === 1
-                  ? 'Scannez votre permis avec l’appareil photo'
-                  : createStep === 2
-                    ? 'Renseignez les informations essentielles'
-                    : 'Vérifiez la fiche A4 puis validez'
-                : hasSavedDossier
-                  ? 'Votre dossier permis est disponible'
-                  : 'Aucun permis enregistré pour le moment'}
-            </Text>
-          </View>
 
-          {flow === 'create' && createStep === 1 ? (
-            <View style={styles.stepScreen}>
-              <Text style={styles.stepScreenTitle}>Veuillez scanner votre document</Text>
-              <Text style={styles.stepScreenSub}>Touchez la zone ci-dessous pour ouvrir l&apos;appareil photo.</Text>
-              {imageUri ? (
-                <View style={styles.thumbWrap}>
-                  <Image source={{ uri: imageUri }} style={styles.thumb} />
-                  <Text style={styles.thumbText}>Scan prêt</Text>
-                </View>
-              ) : (
-                <TouchableOpacity style={styles.cameraPlaceholder} onPress={handleScanPermis} activeOpacity={0.85}>
-                  <Text style={styles.placeholderText}>Scanner mon permis</Text>
-                </TouchableOpacity>
-              )}
+            <View style={styles.photoCard}>
+              <Pressable onPress={() => setModalVisible(true)} style={({ pressed }) => [styles.previewWrap, pressed && styles.scaleDown]}>
+                <Image source={{ uri: doc.imageUri }} style={styles.previewImage} />
+                <Text style={styles.previewHint}>Appuyer pour agrandir</Text>
+              </Pressable>
             </View>
-          ) : null}
-
-          {flow === 'create' && createStep === 2 ? (
-            <View style={[styles.infoBox, styles.stepScreen]}>
-              <Text style={styles.infoTitle}>Informations essentielles</Text>
-              <Text style={styles.label}>Nom</Text>
-              <TextInput style={styles.input} value={nom} onChangeText={setNom} placeholder="Optionnel" />
-              <Text style={styles.label}>Prénom</Text>
-              <TextInput style={styles.input} value={prenom} onChangeText={setPrenom} placeholder="Optionnel" />
-              <Text style={styles.label}>Adresse</Text>
-              <AddressAutocompleteInput
-                value={adresse}
-                onChangeText={setAdresse}
-                placeholder="Optionnel"
-                inputStyle={styles.input}
-              />
-              <Text style={styles.label}>Ville</Text>
-              <TextInput style={styles.input} value={ville} onChangeText={setVille} placeholder="Optionnel" />
-              <Text style={styles.label}>Département</Text>
-              <TextInput style={styles.input} value={departement} onChangeText={setDepartement} placeholder="Optionnel" />
-              <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={() =>
-                  Alert.alert('Valider les informations ?', 'Voulez-vous enregistrer ces informations avant de continuer ?', [
-                    { text: 'Annuler', style: 'cancel' },
-                    { text: 'Enregistrer', onPress: () => setCreateStep(3) },
-                  ])
-                }
-                activeOpacity={0.9}
-              >
-                <Text style={styles.saveBtnText}>VALIDER LES INFORMATIONS</Text>
-              </TouchableOpacity>
+          </>
+        ) : (
+          <View style={styles.emptyOnlyCard}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(37,99,235,0.1)', 'rgba(148,163,184,0.08)', 'rgba(255,255,255,0.98)']}
+              locations={[0, 0.6, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.emptyOnlyIconWrap}>
+              <MaterialCommunityIcons name="card-account-details-outline" size={20} color="#1d4ed8" />
             </View>
-          ) : null}
+            <Text style={styles.emptyOnlyText}>Aucun permis enregistré, un seul document par compte.</Text>
+          </View>
+        )}
 
-          {(flow === 'create' && createStep === 3) || (flow === 'view' && hasSavedDossier) ? (
-            <TouchableOpacity style={[styles.thumbWrap, styles.stepScreen]} onPress={() => setModalVisible(true)}>
-              <Image source={{ uri: imageUri }} style={styles.thumb} />
-              <Text style={styles.thumbText}>Ouvrir en plein écran</Text>
-            </TouchableOpacity>
-          ) : null}
-        </Animated.View>
-
-        {(flow === 'create' && createStep === 3) || (flow === 'view' && hasSavedDossier) ? (
-          <View style={styles.infoBox}>
-            <Text style={styles.infoTitle}>Aperçu fiche permis (format A4)</Text>
-            <Text style={styles.infoLine}>Nom: {nom || '-'}</Text>
-            <Text style={styles.infoLine}>Prénom: {prenom || '-'}</Text>
-            <Text style={styles.infoLine}>Adresse: {adresse || '-'}</Text>
-            <Text style={styles.infoLine}>Ville: {ville || '-'}</Text>
-            <Text style={styles.infoLine}>Département: {departement || '-'}</Text>
-            <Text style={styles.infoLine}>Créé le: {createdAt || '-'}</Text>
-            <Text style={styles.infoLine}>Modifié le: {updatedAt || '-'}</Text>
+        {doc ? (
+          <View style={styles.metaCard}>
+            <Text style={styles.metaLine}>Créé le: {doc.createdAt || '-'}</Text>
+            <Text style={styles.metaLine}>Modifié le: {doc.updatedAt || '-'}</Text>
           </View>
         ) : null}
 
-        {flow === 'view' && !hasSavedDossier ? (
-          <View style={styles.infoBox}>
-            <Text style={styles.infoTitle}>Aucun permis enregistré</Text>
-            <Text style={styles.infoLine}>Vous n&apos;avez pas encore créé de dossier permis.</Text>
-            <TouchableOpacity
-              style={styles.saveBtn}
-              onPress={() => {
-                setFlow('create');
-                resetCreateForm();
-              }}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.saveBtnText}>CRÉER NOUVEAU PERMIS</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        {flow === 'create' && createStep === 3 ? (
-          <TouchableOpacity
-            style={styles.saveBtn}
+        {doc ? (
+          <Pressable
+            style={({ pressed }) => [styles.deleteBtn, pressed && styles.scaleDown]}
             onPress={() =>
-              Alert.alert('Confirmer l’enregistrement', 'Voulez-vous créer et enregistrer ce dossier permis ?', [
+              Alert.alert('Supprimer le permis ?', 'Cette action supprimera le document local et Supabase.', [
                 { text: 'Annuler', style: 'cancel' },
-                { text: 'Enregistrer', onPress: () => void saveNow() },
+                { text: 'Supprimer', style: 'destructive', onPress: () => void removePermis() },
               ])
             }
-            activeOpacity={0.9}
           >
-            <MaterialCommunityIcons name="content-save-outline" size={20} color="#00F2FF" />
-            <Text style={styles.saveBtnText}>VALIDER ET CRÉER LE DOSSIER</Text>
-          </TouchableOpacity>
-        ) : null}
-
-        {flow === 'view' && hasSavedDossier ? (
-          <>
-            <TouchableOpacity
-              style={styles.saveBtn}
-              onPress={() => {
-                setFlow('create');
-                setCreateStep(2);
-              }}
-              activeOpacity={0.9}
-            >
-              <MaterialCommunityIcons name="pencil-outline" size={20} color="#00F2FF" />
-              <Text style={styles.saveBtnText}>MODIFIER LE TEXTE</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.deleteBtn} onPress={confirmDeleteFolder} activeOpacity={0.9}>
-              <Trash2 size={18} color="#f87171" />
-              <Text style={styles.deleteBtnText}>SUPPRIMER DOSSIER</Text>
-            </TouchableOpacity>
-          </>
+            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#ef4444" />
+            <Text style={styles.deleteTxt}>SUPPRIMER LE DOCUMENT</Text>
+          </Pressable>
         ) : null}
       </ScrollView>
 
-      <Modal visible={modalVisible} transparent animationType="fade">
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalBg}>
-          <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
+          <Pressable style={styles.closeBtn} onPress={() => setModalVisible(false)}>
             <MaterialCommunityIcons name="close-circle" size={44} color="#fff" />
-          </TouchableOpacity>
-          <Image source={{ uri: imageUri }} style={styles.fullImage} resizeMode="contain" />
+          </Pressable>
+          {doc?.imageUri ? <Image source={{ uri: doc.imageUri }} style={styles.fullImage} resizeMode="contain" /> : null}
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </OttoDossierFrame>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 14, paddingTop: 50, backgroundColor: UI_THEME.bg },
-  content: { flex: 1 },
-  stepScreen: {
-    minHeight: 420,
-    justifyContent: 'center',
+  content: {
+    paddingTop: 4,
+    paddingBottom: 24,
+    gap: 10,
   },
-  stepScreenTitle: {
-    color: UI_THEME.textSecondary,
-    fontSize: 20,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  stepScreenSub: {
-    color: UI_THEME.textMuted,
-    textAlign: 'center',
-    fontSize: 13,
-    marginBottom: 18,
-  },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  headerCenter: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
-  headerIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,242,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(0,242,255,0.4)',
-    marginBottom: 4,
-  },
-  stepsWrap: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, marginTop: 2 },
-  stepItem: { alignItems: 'center', flex: 1 },
-  stepDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepDotActive: { borderColor: UI_THEME.cyan, backgroundColor: 'rgba(0,242,255,0.16)' },
-  stepDotText: { color: '#94a3b8', fontSize: 11, fontWeight: '800' },
-  stepDotTextActive: { color: '#e2e8f0' },
-  stepLabel: { marginTop: 6, color: '#64748b', fontSize: 10, fontWeight: '700' },
-  stepLabelActive: { color: '#94a3b8' },
-  progressTrack: { height: 6, borderRadius: 999, backgroundColor: '#1f2937', marginBottom: 10, overflow: 'hidden' },
-  progressFill: { height: 6, borderRadius: 999, backgroundColor: UI_THEME.cyan },
-  stepHintCard: {
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  stepHintTitle: { color: '#67e8f9', fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  stepHintText: { color: '#cbd5e1', fontSize: 13, marginTop: 4, fontWeight: '700' },
-  title: { fontSize: 22, fontWeight: '800', color: UI_THEME.textSecondary, textAlign: 'center' },
-  headerSubtitle: { marginTop: 2, color: '#94a3b8', fontSize: 11, textAlign: 'center' },
-  placeholderText: { color: '#94a3b8', fontWeight: '600', fontSize: 13, textAlign: 'center', paddingHorizontal: 8 },
-  cameraPlaceholder: {
-    width: '100%',
-    height: 168,
-    backgroundColor: '#0f172a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#243246',
-    borderStyle: 'dashed',
-  },
-  thumbWrap: {
+  scaleDown: { transform: [{ scale: 0.98 }] },
+  headerCard: {
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.26)',
+    backgroundColor: '#ffffff',
+    padding: 14,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(186,230,253,0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.78)',
+    marginBottom: 8,
+  },
+  title: {
+    color: '#0c4a6e',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  subTitle: {
+    color: '#0369a1',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  photoCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.22)',
+    backgroundColor: '#ffffff',
+    padding: 12,
+  },
+  previewWrap: {
+    borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#243246',
-    backgroundColor: '#0f172a',
+    borderColor: 'rgba(96,165,250,0.36)',
   },
-  thumb: { width: '100%', height: 130 },
-  thumbText: { textAlign: 'center', paddingVertical: 6, color: '#00F2FF', fontWeight: '700', fontSize: 12 },
-  infoBox: {
-    marginTop: 12,
-    padding: 14,
-    backgroundColor: '#111827',
-    borderRadius: 10,
+  previewImage: { width: '100%', height: 210, backgroundColor: '#e2e8f0' },
+  previewHint: {
+    textAlign: 'center',
+    paddingVertical: 8,
+    color: '#0369a1',
+    fontWeight: '700',
+    fontSize: 12,
+    backgroundColor: '#f8fafc',
+  },
+  emptyBox: {
+    height: 180,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1f2937',
-  },
-  infoTitle: { fontWeight: '800', marginBottom: 6, color: '#00F2FF', fontSize: 14 },
-  savedText: { color: '#22c55e', fontSize: 11, fontWeight: '800', marginBottom: 4 },
-  infoLine: { color: '#cbd5e1', fontSize: 12, marginBottom: 6 },
-  label: { marginTop: 4, marginBottom: 3, color: '#93a4b8', fontWeight: '700', fontSize: 12 },
-  input: {
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#243246',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#e2e8f0',
-  },
-  saveBtn: {
-    marginBottom: 10,
-    alignSelf: 'stretch',
-    flexDirection: 'row',
+    borderStyle: 'dashed',
+    borderColor: 'rgba(14,165,233,0.4)',
+    backgroundColor: 'rgba(239,246,255,0.8)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
     paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0,242,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(0,242,255,0.4)',
-    shadowColor: '#00F2FF',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
+    gap: 6,
   },
-  saveBtnText: { color: '#67e8f9', fontWeight: '800', fontSize: 13, letterSpacing: 0.3 },
-  deleteBtn: {
-    marginBottom: 24,
-    alignSelf: 'stretch',
-    flexDirection: 'row',
+  emptyTitle: { color: '#0c4a6e', fontSize: 14, fontWeight: '800' },
+  emptySub: { color: '#475569', fontSize: 12, textAlign: 'center' },
+  emptyOnlyCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.3)',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
     gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: 'rgba(197,48,48,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(197,48,48,0.35)',
   },
-  deleteBtnText: {
-    color: '#f87171',
-    fontWeight: '800',
+  emptyOnlyIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(219,234,254,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.34)',
+  },
+  emptyOnlyText: {
+    color: '#334155',
     fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  metaCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.22)',
+    backgroundColor: '#ffffff',
+    padding: 12,
+  },
+  metaLine: {
+    color: '#475569',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  deleteBtn: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.35)',
+    backgroundColor: 'rgba(254,242,242,0.95)',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  deleteTxt: {
+    color: '#dc2626',
+    fontWeight: '900',
+    fontSize: 12,
     letterSpacing: 0.3,
   },
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
-  closeBtn: { position: 'absolute', top: 50, right: 20, zIndex: 2 },
+  closeBtn: { position: 'absolute', top: 48, right: 20, zIndex: 2 },
   fullImage: { width: '100%', height: '85%' },
 });

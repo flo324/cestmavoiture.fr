@@ -1,11 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
   Modal,
   Pressable,
@@ -19,14 +20,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddressAutocompleteInput } from '../../components/AddressAutocompleteInput';
 import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
+import { STORAGE_PENDING_CT_FROM_SCAN } from '../../constants/scanConstants';
 import { UI_THEME } from '../../constants/uiTheme';
-import { normalizeDocumentCapture } from '../../services/documentScan';
-import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
+import { fetchGeminiGenerateContentDocumentVision } from '../../services/geminiModels';
 import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
-import { userGetItem, userSetItem } from '../../services/userStorage';
+import { userGetItem, userRemoveItem, userSetItem } from '../../services/userStorage';
 
 const STORAGE_KEY_CT_FOLDERS = '@ma_voiture_ct_folders_v2';
-const GEMINI_MODEL = 'gemini-2.0-flash';
 
 type CtInfoState = {
   dateCt: string;
@@ -234,25 +234,18 @@ async function transcribeCtTextWithIA(base64Image: string, apiKey: string): Prom
     'Reponds en texte brut uniquement.',
   ].join('\n');
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
-            ],
-          },
+  const response = await fetchGeminiGenerateContentDocumentVision(apiKey, {
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
         ],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 1800 },
-      }),
-    }
-  );
+      },
+    ],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 1800 },
+  });
   if (!response.ok) return '';
   const json = await response.json();
   return String(json?.candidates?.[0]?.content?.parts?.[0]?.text ?? '').trim();
@@ -300,30 +293,23 @@ async function analyzeCtWithIA(uri: string): Promise<CtInfoState> {
       '{"documentCtDetecte":true,"natureControle":"","dateControle":"","numeroProcesVerbal":"","resultatControle":"","limiteValidite":"","identificationCentre":"","defaillancesGravite":"","releveKilometrage":""}',
     ].join('\n');
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
+    const response = await fetchGeminiGenerateContentDocumentVision(apiKey, {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
             {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: 'image/jpeg',
-                    data: base64Image,
-                  },
-                },
-              ],
+              inline_data: {
+                mime_type: 'image/jpeg',
+                data: base64Image,
+              },
             },
           ],
-          generationConfig: { temperature: 0.1 },
-        }),
-      }
-    );
+        },
+      ],
+      generationConfig: { temperature: 0.1 },
+    });
 
     if (!response.ok) {
       let reason = `HTTP ${response.status}`;
@@ -459,10 +445,14 @@ async function analyzeCtWithIA(uri: string): Promise<CtInfoState> {
 }
 
 export default function CtScreen() {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const allowLeaveRef = useRef(false);
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     imageCaptured?: string;
     fromGlobalScan?: string;
+    pendingFromScan?: string;
   }>();
 
   const [folders, setFolders] = useState<CtFolder[]>([]);
@@ -470,6 +460,55 @@ export default function CtScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [imageModal, setImageModal] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+
+  const goDocs = useCallback(() => {
+    allowLeaveRef.current = true;
+    router.replace('/docs');
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      allowLeaveRef.current = false;
+      return () => {};
+    }, [])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (imageModal) {
+          setImageModal(false);
+          return true;
+        }
+        if (selectedId) {
+          setSelectedId(null);
+          return true;
+        }
+        goDocs();
+        return true;
+      });
+      return () => sub.remove();
+    }, [goDocs, imageModal, selectedId])
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowLeaveRef.current) return;
+      if (imageModal) {
+        event.preventDefault();
+        setImageModal(false);
+        return;
+      }
+      if (selectedId) {
+        event.preventDefault();
+        setSelectedId(null);
+        return;
+      }
+      event.preventDefault();
+      goDocs();
+    });
+    return unsubscribe;
+  }, [goDocs, imageModal, navigation, selectedId]);
 
   const formatDateTime = (ts?: number) =>
     ts
@@ -481,6 +520,36 @@ export default function CtScreen() {
           minute: '2-digit',
         })
       : '-';
+
+  const createFolderFromImage = useCallback(async (uri: string) => {
+    setIsAnalyzing(true);
+    try {
+      const analyzed = await analyzeCtWithIA(uri);
+      const folder: CtFolder = {
+        id: `ct-${Date.now()}`,
+        name: `CT ${analyzed.dateCt}`,
+        imageUri: uri,
+        info: analyzed,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      setFolders((prev) => [folder, ...prev]);
+      setSelectedId(folder.id);
+      if (analyzed.aiStatus === 'QUOTA') {
+        Alert.alert(
+          'Quota IA atteint',
+          'La lecture automatique est temporairement indisponible. Le dossier est créé et vous pouvez compléter les champs manuellement.'
+        );
+      } else if (analyzed.aiStatus === 'ERROR') {
+        Alert.alert(
+          'Analyse partielle',
+          'Le dossier est créé, mais certaines informations n’ont pas pu être lues automatiquement.'
+        );
+      }
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -506,11 +575,31 @@ export default function CtScreen() {
   }, [folders, hydrated]);
 
   useEffect(() => {
-    const incomingUri = typeof params.imageCaptured === 'string' ? params.imageCaptured : '';
+    if (!hydrated) return;
     const fromGlobal = typeof params.fromGlobalScan === 'string' ? params.fromGlobalScan : '';
-    if (!incomingUri || fromGlobal !== '1') return;
-    createFolderFromImage(incomingUri).catch(() => {});
-  }, [params.imageCaptured, params.fromGlobalScan]);
+    if (fromGlobal !== '1') return;
+
+    let cancelled = false;
+    (async () => {
+      const pendingFlag = typeof params.pendingFromScan === 'string' ? params.pendingFromScan : '';
+      let uri = '';
+      if (pendingFlag === '1') {
+        const raw = await userGetItem(STORAGE_PENDING_CT_FROM_SCAN);
+        uri = typeof raw === 'string' ? raw.trim() : '';
+        if (uri) await userRemoveItem(STORAGE_PENDING_CT_FROM_SCAN);
+      } else {
+        const inc: unknown = params.imageCaptured;
+        if (typeof inc === 'string') uri = inc.trim();
+        else if (Array.isArray(inc) && inc[0] != null) uri = String(inc[0]).trim();
+      }
+      if (!uri || cancelled) return;
+      await createFolderFromImage(uri);
+    })().catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, params.fromGlobalScan, params.pendingFromScan, params.imageCaptured, createFolderFromImage]);
 
   const selectedFolder = useMemo(
     () => folders.find((f) => f.id === selectedId) ?? null,
@@ -544,48 +633,8 @@ export default function CtScreen() {
     );
   };
 
-  const createFolderFromImage = async (uri: string) => {
-    setIsAnalyzing(true);
-    try {
-      const analyzed = await analyzeCtWithIA(uri);
-      const folder: CtFolder = {
-        id: `ct-${Date.now()}`,
-        name: `CT ${analyzed.dateCt}`,
-        imageUri: uri,
-        info: analyzed,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      setFolders((prev) => [folder, ...prev]);
-      setSelectedId(folder.id);
-      if (analyzed.aiStatus === 'QUOTA') {
-        Alert.alert(
-          'Quota IA atteint',
-          'La lecture automatique est temporairement indisponible. Le dossier est créé et vous pouvez compléter les champs manuellement.'
-        );
-      } else if (analyzed.aiStatus === 'ERROR') {
-        Alert.alert(
-          'Analyse partielle',
-          'Le dossier est créé, mais certaines informations n’ont pas pu être lues automatiquement.'
-        );
-      }
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const handleNewFolder = async () => {
-    const uriScanned = await scanDocumentWithFallback();
-    if (!uriScanned) {
-      Alert.alert('Permission requise', 'Autorisez la caméra pour créer un dossier CT.');
-      return;
-    }
-    const normalized = await normalizeDocumentCapture(uriScanned, {
-      quality: 0.95,
-      smartDocument: true,
-      autoCropA4: true,
-    });
-    await createFolderFromImage(normalized.uri);
+  const handleNewFolder = () => {
+    Alert.alert('Scan principal', 'Utilisez le bouton Scan principal de la page d’accueil pour créer un dossier CT.');
   };
 
   const confirmDeleteFolder = (id: string) => {

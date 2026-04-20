@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { InteractionManager, PermissionsAndroid, Platform } from 'react-native';
 
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
@@ -26,6 +26,13 @@ export function useVehicleActivityNative(enabled: boolean) {
     let subscription: { remove: () => void } | null = null;
 
     const run = async () => {
+      await new Promise<void>((resolve) => {
+        InteractionManager.runAfterInteractions(() => {
+          setTimeout(resolve, 1200);
+        });
+      });
+      if (cancelled) return;
+
       if (Platform.OS === 'android' && Platform.Version >= 29) {
         try {
           await PermissionsAndroid.request(

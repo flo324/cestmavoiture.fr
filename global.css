@@ -1,0 +1,4 @@
+/* Tailwind — importé depuis app/_layout.tsx (Expo / Metro web). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

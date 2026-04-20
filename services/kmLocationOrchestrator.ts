@@ -9,6 +9,17 @@ import { userGetItem } from './userStorage';
 
 let lastModePrecision: boolean | null = null;
 
+async function ensureBackgroundLocationForKmTasks(): Promise<boolean> {
+  const cur = await Location.getBackgroundPermissionsAsync();
+  if (cur.status === 'granted') return true;
+  try {
+    const next = await Location.requestBackgroundPermissionsAsync();
+    return next.status === 'granted';
+  } catch {
+    return false;
+  }
+}
+
 async function shouldRunHighPrecisionTracking(sampleLoc?: LocationObject | null): Promise<boolean> {
   await hydrateVehicleActivityFromCache();
   const raw = await userGetItem(VEHICLE_ACTIVITY_CACHE_KEY);
@@ -42,6 +53,9 @@ const androidFs = {
 export async function syncKmLocationTrackingMode(sampleLoc?: LocationObject | null): Promise<void> {
   if (Platform.OS === 'web') return;
   if (!isKmBackgroundTasksRegistered) return;
+
+  const bgOk = await ensureBackgroundLocationForKmTasks();
+  if (!bgOk) return;
 
   await Location.stopLocationUpdatesAsync('otto-km-background-v1').catch(() => {});
 

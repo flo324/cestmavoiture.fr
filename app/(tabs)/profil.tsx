@@ -34,6 +34,7 @@ import {
   parseKmInput,
   updateVehicleRemoteFields,
 } from '../../services/vehiclesDb';
+import { generativeLanguageGenerateUrl, GEMINI_MODEL_1_5_PRO } from '../../services/geminiModels';
 import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
 import { lookupVehicleByPlate } from '../../services/vehicleLookup';
 
@@ -45,7 +46,6 @@ type VehicleBox = {
 };
 
 const MAX_VISION_EDGE = 1280;
-const GEMINI_VISION_MODEL = 'gemini-1.5-flash';
 type ProfileDraft = {
   prenom: string;
   nom: string;
@@ -111,30 +111,27 @@ async function callGeminiVehicleBox(
   base64Jpeg: string,
   prompt: string
 ): Promise<VehicleBox | null> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_VISION_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: prompt },
-              {
-                inline_data: {
-                  mime_type: 'image/jpeg',
-                  data: base64Jpeg,
-                },
+  const response = await fetch(generativeLanguageGenerateUrl(GEMINI_MODEL_1_5_PRO, apiKey), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: 'image/jpeg',
+                data: base64Jpeg,
               },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0.05 },
-      }),
-    }
-  );
+            },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0.05 },
+    }),
+  });
 
   if (!response.ok) return null;
   const json = await response.json();

@@ -1,12 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { BackHandler, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { STORAGE_DIAG_SCAN } from '../../constants/scanConstants';
 import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
-import { userGetItem } from '../../services/userStorage';
+import { userGetItem, userSetItem } from '../../services/userStorage';
 
 type DiagScanItem = {
   id: string;
@@ -34,11 +34,26 @@ const folders: DiagFolder[] = [
     route: '/entretien',
   },
 ];
+const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
 
 export default function DiagnosticsScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
+  const allowLeaveRef = useRef(false);
   const insets = useSafeAreaInsets();
   const [scanItems, setScanItems] = useState<DiagScanItem[]>([]);
+  const goToFolders = useCallback(() => {
+    allowLeaveRef.current = true;
+    void userSetItem(RETURN_TO_FOLDERS_FLAG, '1');
+    router.replace('/(tabs)');
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      allowLeaveRef.current = false;
+      return () => {};
+    }, [])
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -61,6 +76,25 @@ export default function DiagnosticsScreen() {
         cancelled = true;
       };
     }, [])
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowLeaveRef.current) return;
+      event.preventDefault();
+      goToFolders();
+    });
+    return unsubscribe;
+  }, [goToFolders, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        goToFolders();
+        return true;
+      });
+      return () => sub.remove();
+    }, [goToFolders])
   );
 
   return (

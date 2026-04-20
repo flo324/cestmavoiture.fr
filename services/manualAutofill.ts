@@ -1,5 +1,6 @@
 import { documentDirectory, downloadAsync } from 'expo-file-system/legacy';
 
+import { generativeLanguageGenerateUrl, GEMINI_MODEL_1_5_PRO } from './geminiModels';
 import { getGoogleGenerativeApiKeyOptional } from './googleGenerativeApiKey';
 import { userGetItem, userSetItem } from './userStorage';
 
@@ -49,17 +50,14 @@ async function fetchDirectPdfUrlFromGemini(modele: string, immat: string): Promi
     'Si tu ne connais aucune URL fiable et verifiable, reponds exactement: {"url":""}',
   ].join('\n');
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 160 },
-      }),
-    }
-  );
+  const response = await fetch(generativeLanguageGenerateUrl(GEMINI_MODEL_1_5_PRO, apiKey), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 160 },
+    }),
+  });
   if (!response.ok) throw new Error('gemini http');
   const json = await response.json();
   const rawText = String(json?.candidates?.[0]?.content?.parts?.[0]?.text ?? '');

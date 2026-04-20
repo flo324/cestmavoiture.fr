@@ -2,12 +2,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { documentDirectory, downloadAsync, getInfoAsync } from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
+  BackHandler,
   Easing,
   Image,
   Keyboard,
@@ -27,11 +28,13 @@ import { useVehicle } from '../../context/VehicleContext';
 import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
 import { UI_THEME } from '../../constants/uiTheme';
 import { normalizeDocumentCapture } from '../../services/documentScan';
+import { generativeLanguageGenerateUrl, GEMINI_MODEL_1_5_PRO } from '../../services/geminiModels';
 import { getGoogleGenerativeApiKeyOptional } from '../../services/googleGenerativeApiKey';
 import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const STORAGE_KEY_CT_FOLDERS = '@ma_voiture_ct_folders_v2';
 const STORAGE_KEY_ENTRETIEN_MODULES = '@ma_voiture_entretien_modules_v1';
+const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
 
 type CtFolder = {
   id: string;
@@ -244,7 +247,7 @@ async function askGeminiWarning(prompt: string): Promise<string> {
   if (!apiKey) throw new Error('missing gemini key');
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    generativeLanguageGenerateUrl(GEMINI_MODEL_1_5_PRO, apiKey),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -392,6 +395,9 @@ async function downloadManualPdfToDevice(pdfUrl: string, modele: string): Promis
 }
 
 export default function EntretienScreen() {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const allowLeaveRef = useRef(false);
   const insets = useSafeAreaInsets();
   const [ctFolders, setCtFolders] = useState<CtFolder[]>([]);
   const [modules, setModules] = useState<EntretienModules>(defaultModules);
@@ -415,6 +421,18 @@ export default function EntretienScreen() {
   const currentKm = parseKmNumber(kmCtx?.km);
   const latestCt = useMemo(() => (ctFolders.length > 0 ? ctFolders[0] : null), [ctFolders]);
   const repairPriorityItems = useMemo(() => parsePriorityItems(reparationsDraft), [reparationsDraft]);
+  const goToFolders = useCallback(() => {
+    allowLeaveRef.current = true;
+    void userSetItem(RETURN_TO_FOLDERS_FLAG, '1');
+    router.replace('/(tabs)');
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      allowLeaveRef.current = false;
+      return () => {};
+    }, [])
+  );
 
   const loadData = useCallback(async () => {
     try {
@@ -460,6 +478,29 @@ export default function EntretienScreen() {
     useCallback(() => {
       loadData().catch(() => {});
     }, [loadData])
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowLeaveRef.current) return;
+      event.preventDefault();
+      goToFolders();
+    });
+    return unsubscribe;
+  }, [goToFolders, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (activePanel != null) {
+          setActivePanel(null);
+          return true;
+        }
+        goToFolders();
+        return true;
+      });
+      return () => sub.remove();
+    }, [activePanel, goToFolders])
   );
 
   const saveModules = async (next: EntretienModules) => {

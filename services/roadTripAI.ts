@@ -5,6 +5,12 @@
 import * as Location from 'expo-location';
 
 import { getGoogleGenerativeApiKey } from './googleGenerativeApiKey';
+import {
+  generativeLanguageGenerateUrl,
+  GEMINI_MODEL_1_5_PRO,
+  GEMINI_MODEL_2_0_FLASH,
+  GEMINI_MODEL_2_5_FLASH,
+} from './geminiModels';
 
 export type RoadTripStepDraft = { name: string; hint?: string };
 export type RoadTripPlanDraft = { title: string; steps: RoadTripStepDraft[]; tips?: string };
@@ -16,12 +22,8 @@ export type GeocodedStep = {
   longitude: number;
 };
 
-/** Ordre : modèle le plus disponible d’abord ; v1 en secours si v1beta refuse (rare). */
-const GENERATE_ATTEMPTS = [
-  { version: 'v1beta' as const, model: 'gemini-1.5-flash' },
-  { version: 'v1beta' as const, model: 'gemini-2.0-flash' },
-  { version: 'v1' as const, model: 'gemini-1.5-flash' },
-] as const;
+/** Enchaînement si quota ou 404 sur un id (URLs v1 via generativeLanguageGenerateUrl). */
+const GENERATE_MODELS = [GEMINI_MODEL_2_5_FLASH, GEMINI_MODEL_2_0_FLASH, GEMINI_MODEL_1_5_PRO] as const;
 
 export const ROAD_TRIP_STYLE_OPTIONS = ['Rapide', 'Touristique', 'Économique'] as const;
 export type RoadTripStyleOption = (typeof ROAD_TRIP_STYLE_OPTIONS)[number];
@@ -37,18 +39,15 @@ async function geminiGenerateText(
   let response: Response | null = null;
   let lastStatus = 0;
   let lastBody = '';
-  for (const { version, model } of GENERATE_ATTEMPTS) {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature, maxOutputTokens },
-        }),
-      }
-    );
+  for (const model of GENERATE_MODELS) {
+    const r = await fetch(generativeLanguageGenerateUrl(model, apiKey), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature, maxOutputTokens },
+      }),
+    });
     if (r.ok) {
       response = r;
       break;

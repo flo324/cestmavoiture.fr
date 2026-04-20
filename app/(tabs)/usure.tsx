@@ -1,4 +1,4 @@
-﻿import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, ImageBackground, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -9,55 +9,92 @@ import { OttoDossierFrame } from '../../components/OttoDossierFrame';
 import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
-const CUSTOM_DOC_FOLDERS_KEY = '@otto_docs_custom_folders_v1';
-const DOCS_BG_VARIANTS: Record<'permis' | 'cg' | 'ct', string[]> = {
-  // Variantes visuelles premium (illustratives, non officielles).
-  permis: [
-    'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1400&q=80',
-    'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1400&q=80',
-    'https://images.unsplash.com/photo-1556740738-b6a63e27c4df?auto=format&fit=crop&w=1400&q=80',
-  ],
-  cg: [
-    'https://images.unsplash.com/photo-1528747045269-390fe33c19d3?auto=format&fit=crop&w=1400&q=80',
-    'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=1400&q=80',
-    'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?auto=format&fit=crop&w=1400&q=80',
-  ],
-  ct: [
-    'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&w=1400&q=80',
-    'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&w=1400&q=80',
-    'https://images.unsplash.com/photo-1530046339160-ce3e530c7d2f?auto=format&fit=crop&w=1400&q=80',
-  ],
-};
-const DOCS_BG_SELECTED: Record<'permis' | 'cg' | 'ct', number> = {
-  permis: 0,
-  cg: 0,
-  ct: 0,
-};
-const DOCS_BG: Partial<Record<DocCard['action'], string>> = {
-  permis: DOCS_BG_VARIANTS.permis[DOCS_BG_SELECTED.permis],
-  cg: DOCS_BG_VARIANTS.cg[DOCS_BG_SELECTED.cg],
-  ct: DOCS_BG_VARIANTS.ct[DOCS_BG_SELECTED.ct],
+const CUSTOM_WEAR_FOLDERS_KEY = '@otto_usure_custom_folders_v1';
+const WEAR_BG: Partial<Record<WearCard['action'], string>> = {
+  phares: 'https://source.unsplash.com/1400x900/?car,headlight,luxury',
+  pneus: 'https://source.unsplash.com/1400x900/?car,tire,road',
+  batterie: 'https://source.unsplash.com/1400x900/?car,battery,engine',
 };
 
-type DocCard = {
+type WearCard = {
   id: string;
   title: string;
   subtitle: string;
   icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  action: 'permis' | 'cg' | 'ct' | 'new' | 'custom';
+  action: 'phares' | 'pneus' | 'batterie' | 'new' | 'custom';
 };
 
-type CustomDoc = {
+type CustomWearFolder = {
   id: string;
   title: string;
   createdAt: number;
 };
 
-export default function DocsScreen() {
+type WearPalette = {
+  gradient: [string, string, string];
+  cardBorder: string;
+  iconBg: string;
+  iconBorder: string;
+  iconColor: string;
+  chevronColor: string;
+  titleColor: string;
+  subColor: string;
+};
+
+function getWearPalette(action: WearCard['action']): WearPalette {
+  if (action === 'phares') {
+    return {
+      gradient: ['rgba(56,189,248,0.24)', 'rgba(125,211,252,0.16)', 'rgba(255,255,255,0.98)'],
+      cardBorder: 'rgba(56,189,248,0.44)',
+      iconBg: 'rgba(186,230,253,0.55)',
+      iconBorder: 'rgba(56,189,248,0.36)',
+      iconColor: '#0369a1',
+      chevronColor: '#0369a1',
+      titleColor: '#0f172a',
+      subColor: '#475569',
+    };
+  }
+  if (action === 'pneus') {
+    return {
+      gradient: ['rgba(99,102,241,0.24)', 'rgba(165,180,252,0.16)', 'rgba(255,255,255,0.98)'],
+      cardBorder: 'rgba(99,102,241,0.44)',
+      iconBg: 'rgba(224,231,255,0.55)',
+      iconBorder: 'rgba(129,140,248,0.34)',
+      iconColor: '#4338ca',
+      chevronColor: '#4338ca',
+      titleColor: '#0f172a',
+      subColor: '#475569',
+    };
+  }
+  if (action === 'batterie') {
+    return {
+      gradient: ['rgba(59,130,246,0.24)', 'rgba(147,197,253,0.16)', 'rgba(255,255,255,0.98)'],
+      cardBorder: 'rgba(59,130,246,0.44)',
+      iconBg: 'rgba(219,234,254,0.55)',
+      iconBorder: 'rgba(96,165,250,0.34)',
+      iconColor: '#2563eb',
+      chevronColor: '#2563eb',
+      titleColor: '#0f172a',
+      subColor: '#475569',
+    };
+  }
+  return {
+    gradient: ['rgba(37,99,235,0.2)', 'rgba(125,211,252,0.14)', 'rgba(255,255,255,0.98)'],
+    cardBorder: 'rgba(96,165,250,0.42)',
+    iconBg: 'rgba(191,219,254,0.55)',
+    iconBorder: 'rgba(147,197,253,0.36)',
+    iconColor: '#0369a1',
+    chevronColor: '#1d4ed8',
+    titleColor: '#0f172a',
+    subColor: '#475569',
+  };
+}
+
+export default function UsureScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const allowLeaveRef = useRef(false);
-  const [customFolders, setCustomFolders] = useState<CustomDoc[]>([]);
+  const [customFolders, setCustomFolders] = useState<CustomWearFolder[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [newFolderTitle, setNewFolderTitle] = useState('');
 
@@ -100,9 +137,9 @@ export default function DocsScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const raw = await userGetItem(CUSTOM_DOC_FOLDERS_KEY);
+        const raw = await userGetItem(CUSTOM_WEAR_FOLDERS_KEY);
         if (!raw) return;
-        const parsed = JSON.parse(raw) as CustomDoc[];
+        const parsed = JSON.parse(raw) as CustomWearFolder[];
         if (Array.isArray(parsed)) setCustomFolders(parsed);
       } catch {
         setCustomFolders([]);
@@ -111,36 +148,36 @@ export default function DocsScreen() {
   }, []);
 
   useEffect(() => {
-    void userSetItem(CUSTOM_DOC_FOLDERS_KEY, JSON.stringify(customFolders));
+    void userSetItem(CUSTOM_WEAR_FOLDERS_KEY, JSON.stringify(customFolders));
   }, [customFolders]);
 
-  const baseCards: DocCard[] = useMemo(
+  const baseCards: WearCard[] = useMemo(
     () => [
       {
-        id: 'permis',
-        title: 'Permis',
-        subtitle: 'Accéder au permis de conduire',
-        icon: 'card-account-details-outline',
-        action: 'permis',
+        id: 'phares',
+        title: 'Phares',
+        subtitle: 'Suivi ampoules et remplacements',
+        icon: 'car-light-high',
+        action: 'phares',
       },
       {
-        id: 'carte-grise',
-        title: 'Carte grise',
-        subtitle: 'Accéder aux infos du véhicule',
-        icon: 'file-document-outline',
-        action: 'cg',
+        id: 'pneus',
+        title: 'Pneus',
+        subtitle: 'Usure, montage et historique',
+        icon: 'tire',
+        action: 'pneus',
       },
       {
-        id: 'controle-technique',
-        title: 'Contrôle technique',
-        subtitle: 'Suivi et historique du CT',
-        icon: 'car-wrench',
-        action: 'ct',
+        id: 'batterie',
+        title: 'Batterie',
+        subtitle: 'Etat, age et risques de panne',
+        icon: 'car-battery',
+        action: 'batterie',
       },
       {
         id: 'new-folder',
         title: 'Créer un nouveau dossier',
-        subtitle: 'Ajouter un dossier personnalisé',
+        subtitle: 'Ajouter un dossier personnalise',
         icon: 'folder-plus',
         action: 'new',
       },
@@ -148,13 +185,13 @@ export default function DocsScreen() {
     []
   );
 
-  const allCards: DocCard[] = useMemo(
+  const allCards: WearCard[] = useMemo(
     () => [
       ...baseCards,
       ...customFolders.map((f) => ({
         id: f.id,
         title: f.title,
-        subtitle: `Dossier personnalisé (${new Date(f.createdAt).toLocaleDateString('fr-FR')})`,
+        subtitle: `Dossier personnalise (${new Date(f.createdAt).toLocaleDateString('fr-FR')})`,
         icon: 'folder-outline',
         action: 'custom' as const,
       })),
@@ -162,17 +199,17 @@ export default function DocsScreen() {
     [baseCards, customFolders]
   );
 
-  const openCard = (item: DocCard) => {
-    if (item.action === 'permis') {
-      router.push('/scan_permis');
+  const openCard = (item: WearCard) => {
+    if (item.action === 'phares') {
+      router.push('/phares');
       return;
     }
-    if (item.action === 'cg') {
-      router.push('/scan_cg');
+    if (item.action === 'pneus') {
+      router.push('/pneus');
       return;
     }
-    if (item.action === 'ct') {
-      router.push('/ct');
+    if (item.action === 'batterie') {
+      router.push('/batterie');
       return;
     }
     if (item.action === 'new') {
@@ -185,7 +222,7 @@ export default function DocsScreen() {
     const title = newFolderTitle.trim();
     if (!title) return;
     const now = Date.now();
-    setCustomFolders((prev) => [{ id: `custom-${now}`, title, createdAt: now }, ...prev]);
+    setCustomFolders((prev) => [{ id: `wear-custom-${now}`, title, createdAt: now }, ...prev]);
     setNewFolderTitle('');
     setModalVisible(false);
   };
@@ -194,10 +231,16 @@ export default function DocsScreen() {
     <OttoDossierFrame>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {allCards.map((item) => {
-          const bgUri = DOCS_BG[item.action];
+          const palette = getWearPalette(item.action);
+          const bgUri = WEAR_BG[item.action];
           const hasPhoto = Boolean(bgUri);
           return (
-          <ElectricPressable key={item.id} style={styles.docCard} borderRadius={16} onPress={() => openCard(item)}>
+          <ElectricPressable
+            key={item.id}
+            style={[styles.card, { borderColor: palette.cardBorder }]}
+            borderRadius={16}
+            onPress={() => openCard(item)}
+          >
             {hasPhoto ? (
               <ImageBackground source={{ uri: bgUri }} style={styles.cardPhoto} imageStyle={styles.cardPhotoImage}>
                 <LinearGradient
@@ -210,23 +253,31 @@ export default function DocsScreen() {
             ) : (
               <LinearGradient
                 pointerEvents="none"
-                colors={['rgba(59,130,246,0.22)', 'rgba(125,211,252,0.18)', 'rgba(255,255,255,0.98)']}
+                colors={palette.gradient}
                 locations={[0, 0.6, 1]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.cardBlueNuance}
               />
             )}
-            <View style={[styles.iconWrap, hasPhoto && styles.iconWrapPhoto]}>
-              <MaterialCommunityIcons name={item.icon} size={22} color={hasPhoto ? '#e2e8f0' : '#0284c7'} />
+            <View
+              style={[
+                styles.iconWrap,
+                { backgroundColor: palette.iconBg, borderColor: palette.iconBorder },
+                hasPhoto && styles.iconWrapPhoto,
+              ]}
+            >
+              <MaterialCommunityIcons name={item.icon} size={22} color={hasPhoto ? '#e2e8f0' : palette.iconColor} />
             </View>
             <View style={styles.textCol}>
-              <Text style={[styles.docTitle, hasPhoto && styles.docTextPhoto]}>{item.title}</Text>
-              <Text style={[styles.docSub, hasPhoto && styles.docSubPhoto, hasPhoto && styles.docTextPhoto]}>
+              <Text style={[styles.title, { color: hasPhoto ? '#f8fafc' : palette.titleColor }, hasPhoto && styles.photoTextShadow]}>
+                {item.title}
+              </Text>
+              <Text style={[styles.sub, { color: hasPhoto ? 'rgba(226,232,240,0.94)' : palette.subColor }, hasPhoto && styles.photoTextShadow]}>
                 {item.subtitle}
               </Text>
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={hasPhoto ? '#f8fafc' : '#0ea5e9'} />
+            <MaterialCommunityIcons name="chevron-right" size={20} color={hasPhoto ? '#f8fafc' : palette.chevronColor} />
           </ElectricPressable>
         )})}
       </ScrollView>
@@ -234,7 +285,7 @@ export default function DocsScreen() {
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Créer un nouveau dossier</Text>
+            <Text style={styles.modalTitle}>Creer un nouveau dossier</Text>
             <TextInput
               value={newFolderTitle}
               onChangeText={setNewFolderTitle}
@@ -248,7 +299,7 @@ export default function DocsScreen() {
                 <Text style={styles.cancelTxt}>Annuler</Text>
               </Pressable>
               <Pressable style={({ pressed }) => [styles.saveBtn, pressed && styles.scaleDown]} onPress={createFolder}>
-                <Text style={styles.saveTxt}>Créer</Text>
+                <Text style={styles.saveTxt}>Creer</Text>
               </Pressable>
             </View>
           </View>
@@ -264,11 +315,12 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     gap: 10,
   },
-  docCard: {
+  scaleDown: { transform: [{ scale: 0.992 }] },
+  card: {
     minHeight: 86,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(96,165,250,0.46)',
+    borderColor: 'rgba(96,165,250,0.35)',
     backgroundColor: '#ffffff',
     flexDirection: 'row',
     alignItems: 'center',
@@ -294,9 +346,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(186,230,253,0.75)',
+    backgroundColor: 'rgba(191,219,254,0.74)',
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.78)',
+    borderColor: 'rgba(147,197,253,0.78)',
   },
   iconWrapPhoto: {
     backgroundColor: 'rgba(15,23,42,0.45)',
@@ -307,23 +359,19 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     marginRight: 8,
   },
-  docTitle: {
+  title: {
     color: '#0f172a',
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.1,
   },
-  docSub: {
+  sub: {
     marginTop: 4,
     color: '#475569',
     fontSize: 11,
     fontWeight: '500',
   },
-  docSubPhoto: {
-    color: 'rgba(226,232,240,0.94)',
-  },
-  docTextPhoto: {
-    color: '#f8fafc',
+  photoTextShadow: {
     textShadowColor: 'rgba(2,6,23,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
@@ -340,7 +388,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.28)',
+    borderColor: 'rgba(96,165,250,0.28)',
     padding: 14,
   },
   modalTitle: {
@@ -377,7 +425,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#2563eb',
   },
   saveTxt: { color: '#ffffff', fontWeight: '900' },
 });
