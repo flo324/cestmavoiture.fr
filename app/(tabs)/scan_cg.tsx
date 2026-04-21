@@ -5,7 +5,7 @@ import { Alert, BackHandler, Image, Modal, Pressable, ScrollView, StyleSheet, Te
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { OttoDossierFrame } from '../../components/OttoDossierFrame';
-import { STORAGE_PENDING_CG_FROM_SCAN } from '../../constants/scanConstants';
+import { STORAGE_PENDING_CG_FROM_SCAN, STORAGE_SCAN_FORCED_TARGET } from '../../constants/scanConstants';
 import {
   deleteScanDocFromSupabase,
   fetchScanDocsFromSupabase,
@@ -63,7 +63,10 @@ export default function ScanCG() {
   useFocusEffect(
     useCallback(() => {
       allowLeaveRef.current = false;
-      return () => {};
+      void userSetItem(STORAGE_SCAN_FORCED_TARGET, 'cg');
+      return () => {
+        void userRemoveItem(STORAGE_SCAN_FORCED_TARGET).catch(() => {});
+      };
     }, [])
   );
 
@@ -224,11 +227,26 @@ export default function ScanCG() {
           <Text style={styles.subTitle}>Vous pouvez enregistrer plusieurs documents</Text>
         </View>
 
+        <Pressable
+          style={({ pressed }) => [styles.createBtn, pressed && styles.scaleDown]}
+          onPress={() => {
+            void userSetItem(STORAGE_SCAN_FORCED_TARGET, 'cg');
+            router.push('/scan');
+          }}
+        >
+          <MaterialCommunityIcons name="camera-outline" size={18} color="#fff" />
+          <Text style={styles.createBtnTxt}>OTTO SCAN: AJOUTER UNE CARTE GRISE</Text>
+        </Pressable>
+        <View style={styles.scanHintRow}>
+          <MaterialCommunityIcons name="arrow-down-circle-outline" size={16} color="#1d4ed8" />
+          <Text style={styles.scanHintText}>Appuyez aussi sur le bouton OTTO SCAN en bas pour la photo</Text>
+        </View>
+
         {docs.length === 0 ? (
           <View style={styles.emptyBox}>
             <MaterialCommunityIcons name="camera-outline" size={26} color="#0284c7" />
             <Text style={styles.emptyTitle}>Aucune carte grise enregistrée</Text>
-            <Text style={styles.emptySub}>Utilisez le scanner principal (bouton du bas) pour ajouter une photo.</Text>
+            <Text style={styles.emptySub}>Utilisez le bouton de création pour ajouter une photo.</Text>
           </View>
         ) : (
           docs.map((doc) => (
@@ -320,6 +338,33 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#0c4a6e', fontSize: 14, fontWeight: '800' },
   emptySub: { color: '#475569', fontSize: 12, textAlign: 'center' },
+  createBtn: {
+    borderRadius: 12,
+    backgroundColor: '#1d4ed8',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  createBtnTxt: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  scanHintRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  scanHintText: {
+    color: '#1e3a8a',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   docCard: {
     borderRadius: 16,
     borderWidth: 1,

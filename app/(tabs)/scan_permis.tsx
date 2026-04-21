@@ -5,7 +5,7 @@ import { Alert, BackHandler, Image, Modal, Pressable, ScrollView, StyleSheet, Te
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { OttoDossierFrame } from '../../components/OttoDossierFrame';
-import { STORAGE_PENDING_PERMIS_FROM_SCAN } from '../../constants/scanConstants';
+import { STORAGE_PENDING_PERMIS_FROM_SCAN, STORAGE_SCAN_FORCED_TARGET } from '../../constants/scanConstants';
 import {
   deleteScanDocFromSupabase,
   fetchScanDocsFromSupabase,
@@ -61,7 +61,10 @@ export default function ScanPermis() {
   useFocusEffect(
     useCallback(() => {
       allowLeaveRef.current = false;
-      return () => {};
+      void userSetItem(STORAGE_SCAN_FORCED_TARGET, 'permis');
+      return () => {
+        void userRemoveItem(STORAGE_SCAN_FORCED_TARGET).catch(() => {});
+      };
     }, [])
   );
 
@@ -240,6 +243,21 @@ export default function ScanPermis() {
           </View>
         ) : null}
 
+        <Pressable
+          style={({ pressed }) => [styles.createBtn, pressed && styles.scaleDown]}
+          onPress={() => {
+            void userSetItem(STORAGE_SCAN_FORCED_TARGET, 'permis');
+            router.push('/scan');
+          }}
+        >
+          <MaterialCommunityIcons name={doc ? 'camera-retake-outline' : 'card-account-details-outline'} size={18} color="#fff" />
+          <Text style={styles.createBtnTxt}>{doc ? 'OTTO SCAN: MODIFIER VOTRE PERMIS' : 'OTTO SCAN: CRÉER VOTRE PERMIS'}</Text>
+        </Pressable>
+        <View style={styles.scanHintRow}>
+          <MaterialCommunityIcons name="arrow-down-circle-outline" size={16} color="#1d4ed8" />
+          <Text style={styles.scanHintText}>Appuyez aussi sur le bouton OTTO SCAN en bas pour la photo</Text>
+        </View>
+
         {doc ? (
           <Pressable
             style={({ pressed }) => [styles.deleteBtn, pressed && styles.scaleDown]}
@@ -382,6 +400,33 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: 12,
     marginBottom: 4,
+  },
+  createBtn: {
+    borderRadius: 12,
+    backgroundColor: '#1d4ed8',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  createBtnTxt: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  scanHintRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  scanHintText: {
+    color: '#1e3a8a',
+    fontSize: 11,
+    fontWeight: '700',
   },
   deleteBtn: {
     borderRadius: 12,

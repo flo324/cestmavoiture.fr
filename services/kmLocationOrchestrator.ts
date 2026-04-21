@@ -12,12 +12,10 @@ let lastModePrecision: boolean | null = null;
 async function ensureBackgroundLocationForKmTasks(): Promise<boolean> {
   const cur = await Location.getBackgroundPermissionsAsync();
   if (cur.status === 'granted') return true;
-  try {
-    const next = await Location.requestBackgroundPermissionsAsync();
-    return next.status === 'granted';
-  } catch {
-    return false;
-  }
+  // Ne pas forcer l'écran système "Autorisation accès position" au démarrage.
+  // Le passage en arrière-plan sera activé uniquement après permission explicite
+  // donnée par l'utilisateur (via réglages/app flow dédié).
+  return false;
 }
 
 async function shouldRunHighPrecisionTracking(sampleLoc?: LocationObject | null): Promise<boolean> {

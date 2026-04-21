@@ -46,24 +46,28 @@ export async function scanDocumentWithFallback(): Promise<string | null> {
     const result = await DocumentScanner.scanDocument({
       maxNumDocuments: 1,
       responseType: 'imageFilePath',
-      /** 100 + très grande image peut contribuer à OOM / recyclage d’activité sur Android. */
-      croppedImageQuality: 92,
+      // Qualité élevée mais modérée pour limiter les risques de recycle d'activité Android.
+      croppedImageQuality: 88,
     } as any);
     const first = Array.isArray((result as any)?.scannedImages)
       ? (result as any).scannedImages[0]
       : null;
-    if (typeof first === 'string' && first.length > 0) return first;
+    if (typeof first === 'string' && first.length > 0) {
+      console.log('[scanDocumentWithFallback] native scanner success');
+      return first;
+    }
   } catch {
-    // fallback caméra ci-dessous
+    console.log('[scanDocumentWithFallback] native scanner failed, fallback camera');
   }
 
   const { granted } = await ImagePicker.requestCameraPermissionsAsync();
   if (!granted) return null;
   const raw = await ImagePicker.launchCameraAsync({
     allowsEditing: false,
-    quality: 0.92,
+    quality: 0.98,
   });
   const cam = await resolveCameraResult(raw);
   if (cam.canceled || !cam.assets?.[0]?.uri) return null;
+  console.log('[scanDocumentWithFallback] fallback camera success');
   return cam.assets[0].uri;
 }

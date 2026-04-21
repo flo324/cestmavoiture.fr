@@ -175,3 +175,25 @@ export async function deleteScanDocFromSupabase(docId: string): Promise<void> {
     console.log('[scanDocumentSupabase] delete skipped', e);
   }
 }
+
+export async function updateScanDocInSupabase(input: {
+  docId: string;
+  title: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    const userId = await getCurrentUserId();
+    if (!userId) return;
+    const { error } = await supabase
+      .from('documents')
+      .update({
+        title: input.title,
+        payload: input.payload,
+      })
+      .eq('id', input.docId)
+      .eq('user_id', userId);
+    if (error) console.log('[scanDocumentSupabase] update', error.message);
+  } catch (e) {
+    console.log('[scanDocumentSupabase] update skipped', e);
+  }
+}

@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -21,16 +21,23 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AddressAutocompleteInput } from '../../components/AddressAutocompleteInput';
+import {
+  AddressPartsAutocompleteInput,
+  composeAddressParts,
+  type AddressParts,
+} from '../../components/AddressPartsAutocompleteInput';
+import { DateParts, formatDateParts, parseDateParts } from '../../components/SmartDatePartsInput';
 import {
   SCAN_CASES,
   STORAGE_DIAG_SCAN,
   STORAGE_PENDING_CG_FROM_SCAN,
   STORAGE_PENDING_CT_FROM_SCAN,
   STORAGE_PENDING_PERMIS_FROM_SCAN,
+  STORAGE_SCAN_FLOW_LOCK,
+  STORAGE_SCAN_FORCED_TARGET,
   STORAGE_SCAN_CAMERA_SESSION,
+  STORAGE_SCAN_CAMERA_SESSION_AT,
 } from '../../constants/scanConstants';
-import { normalizeDocumentCapture } from '../../services/documentScan';
 import { scanDocumentWithFallback } from '../../services/nativeDocumentScanner';
 import { useVehicle } from '../../context/VehicleContext';
 import { fetchGeminiGenerateContentDocumentVision } from '../../services/geminiModels';
@@ -109,6 +116,10 @@ type FactureRow = {
   date: string;
   garage: string;
   adresse: string;
+  numero?: string;
+  rue?: string;
+  ville?: string;
+  dep?: string;
   km: string;
   prixTTC: string;
   details: string;
@@ -325,13 +336,15 @@ function resolveDocTypeFromLabel(label?: string): (typeof DOC_TYPES)[number] | n
 
 export default function ScanScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
+  const params = useLocalSearchParams<{ source?: string; returnTo?: string }>();
   const insets = useSafeAreaInsets();
   const { activeVehicleId } = useVehicle();
+  const launchedFromCt = params.source === 'ct';
+  const returnTo = typeof params.returnTo === 'string' && params.returnTo.trim() ? params.returnTo : '/ct';
   /** Après navigation vers /ct (ou autre), éviter tout comportement inattendu au prochain passage sur Scan. */
   const skipNextAutoScanRef = useRef(false);
-  const autoLaunchAttemptedRef = useRef(false);
   const [step, setStep] = useState<Step>('idle');
-  const [autoLaunching, setAutoLaunching] = useState(true);
   const [uri, setUri] = useState('');
   const [base64, setBase64] = useState('');
   const [suggestedId, setSuggestedId] = useState(2);
@@ -350,10 +363,59 @@ export default function ScanScreen() {
 
   const [facTitre, setFacTitre] = useState('');
   const [facGarage, setFacGarage] = useState('');
-  const [facDate, setFacDate] = useState('');
+  const [facDateParts, setFacDateParts] = useState<DateParts>(parseDateParts(''));
+  const [facAddressParts, setFacAddressParts] = useState<AddressParts>({
+    numero: '',
+    rue: '',
+    ville: '',
+    dep: '',
+  });
   const [facKm, setFacKm] = useState('');
   const [facPrix, setFacPrix] = useState('');
   const [facDetails, setFacDetails] = useState('');
+  const stepRef = useRef<Step>('idle');
+  const uriRef = useRef('');
+  const selectedIdRef = useRef(2);
+
+  useEffect(() => {
+    stepRef.current = step;
+  }, [step]);
+
+  useEffect(() => {
+    uriRef.current = uri;
+  }, [uri]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[Scan][focus] screen focused', {
+        launchedFromCt,
+        returnTo,
+        step: stepRef.current,
+      });
+      return () => {
+        console.log('[Scan][blur] screen lost focus', {
+          step: stepRef.current,
+          hasUri: Boolean(uriRef.current),
+          selectedId: selectedIdRef.current,
+        });
+      };
+    }, [launchedFromCt, returnTo])
+  );
+
+  useEffect(() => {
+    return () => {
+      console.log('[Scan][cleanup] unmount', {
+        step: stepRef.current,
+        hasUri: Boolean(uriRef.current),
+        selectedId: selectedIdRef.current,
+        launchedFromCt,
+      });
+    };
+  }, [launchedFromCt]);
 
   const resetAll = useCallback(() => {
     setStep('idle');
@@ -371,7 +433,8 @@ export default function ScanScreen() {
     setDiagNotes('');
     setFacTitre('');
     setFacGarage('');
-    setFacDate('');
+    setFacDateParts(parseDateParts(''));
+    setFacAddressParts({ numero: '', rue: '', ville: '', dep: '' });
     setFacKm('');
     setFacPrix('');
     setFacDetails('');
@@ -379,15 +442,31 @@ export default function ScanScreen() {
 
   const openFraming = () => setStep('framing');
 
+  const leaveScan = useCallback(() => {
+    skipNextAutoScanRef.current = true;
+    void userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
+    if (launchedFromCt) {
+      router.replace(returnTo as any);
+      return;
+    }
+    if (navigation.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/docs');
+  }, [launchedFromCt, navigation, returnTo, router]);
+
   const analyzeCaptured = useCallback(async (capturedBase64: string) => {
     if (!capturedBase64) {
       setSuggestedId(2);
       setSelectedId(2);
       setAiReason("Photo reçue mais texte non lisible. Choisissez la section manuellement.");
       const nowFallback = new Date();
-      setFacDate(
-        `${String(nowFallback.getDate()).padStart(2, '0')}/${String(nowFallback.getMonth() + 1).padStart(2, '0')}/${nowFallback.getFullYear()}`
-      );
+      setFacDateParts({
+        day: String(nowFallback.getDate()).padStart(2, '0'),
+        month: String(nowFallback.getMonth() + 1).padStart(2, '0'),
+        year: String(nowFallback.getFullYear()),
+      });
       setStep('pick');
       return;
     }
@@ -427,7 +506,11 @@ export default function ScanScreen() {
               : '';
           setFacTitre((prev) => prev || String(f?.title ?? '').trim() || 'Dépense scannée');
           setFacGarage((prev) => prev || String(f?.supplier ?? '').trim());
-          setFacDate((prev) => prev || toFrDate(String(f?.date ?? '')));
+          setFacDateParts((prev) => {
+            const currentFormatted = formatDateParts(prev);
+            if (currentFormatted) return prev;
+            return parseDateParts(toFrDate(String(f?.date ?? '')));
+          });
           setFacKm((prev) => prev || String(f?.km ?? '').trim() || fallbackKm);
           setFacPrix((prev) => prev || String(f?.amountTtc ?? '').trim() || fallbackAmount);
           setFacDetails((prev) => prev || String(f?.details ?? '').trim() || insight.summary);
@@ -461,35 +544,28 @@ export default function ScanScreen() {
       setAiReason("Analyse indisponible. Choisissez la section qui correspond le mieux.");
     }
     const now = new Date();
-    setFacDate(
-      `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
-    );
+    setFacDateParts({
+      day: String(now.getDate()).padStart(2, '0'),
+      month: String(now.getMonth() + 1).padStart(2, '0'),
+      year: String(now.getFullYear()),
+    });
     setStep('pick');
   }, []);
 
   /** True pendant await scan / traitement — évite une double reprise via getPendingResultAsync. */
   const scanFlowBusyRef = useRef(false);
 
-  const processCapturedUri = useCallback(
-    async (uriScanned: string) => {
-      /** Laisser le retour caméra / scanner se stabiliser (évite pic mémoire + redémarrage Android). */
-      await new Promise<void>((resolve) => {
-        InteractionManager.runAfterInteractions(() => resolve());
-      });
-      setStep('analyzing');
-      /** Scanner natif : déjà recadré — pas de 2ᵉ passe Gemini « smartDocument » (évite jusqu’à 10 appels + OOM). */
-      const normalized = await normalizeDocumentCapture(uriScanned, {
-        includeBase64: true,
-        quality: 0.9,
-        smartDocument: false,
-        autoCropA4: true,
-      });
-      setUri(normalized.uri);
-      setBase64(normalized.base64 ?? '');
-      await analyzeCaptured(normalized.base64 ?? '');
-    },
-    [analyzeCaptured]
-  );
+  const processCapturedUri = useCallback(async (uriScanned: string) => {
+    // Flux simplifié: on affiche d'abord l'aperçu, puis l'utilisateur décide
+    // d'analyser ou de continuer sans IA. Cela évite les traitements lourds
+    // juste après "Suivant" qui pouvaient provoquer des redémarrages.
+    await new Promise<void>((resolve) => {
+      InteractionManager.runAfterInteractions(() => resolve());
+    });
+    setUri(uriScanned);
+    setBase64('');
+    setStep('preview');
+  }, []);
 
   const tryRecoverPendingCameraCapture = useCallback(async () => {
     if (Platform.OS !== 'android') return;
@@ -511,9 +587,11 @@ export default function ScanScreen() {
         : undefined;
     if (!uri) {
       await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION).catch(() => {});
+      await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION_AT).catch(() => {});
       return;
     }
     await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION).catch(() => {});
+    await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION_AT).catch(() => {});
     try {
       scanFlowBusyRef.current = true;
       await processCapturedUri(uri);
@@ -527,6 +605,7 @@ export default function ScanScreen() {
     } finally {
       scanFlowBusyRef.current = false;
       await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION).catch(() => {});
+      await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION_AT).catch(() => {});
     }
   }, [processCapturedUri]);
 
@@ -538,36 +617,8 @@ export default function ScanScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      autoLaunchAttemptedRef.current = false;
-      setAutoLaunching(true);
-      let cancelled = false;
-      const runAutoStart = async () => {
-        // Si un flux précédent demande explicitement de ne pas relancer auto-scan, on respecte.
-        if (skipNextAutoScanRef.current) {
-          skipNextAutoScanRef.current = false;
-          setAutoLaunching(false);
-          return;
-        }
-        if (step !== 'idle' || scanFlowBusyRef.current) {
-          setAutoLaunching(false);
-          return;
-        }
-        await new Promise<void>((resolve) => {
-          InteractionManager.runAfterInteractions(() => resolve());
-        });
-        if (cancelled || step !== 'idle' || scanFlowBusyRef.current || autoLaunchAttemptedRef.current) {
-          setAutoLaunching(false);
-          return;
-        }
-        autoLaunchAttemptedRef.current = true;
-        await takePhoto();
-        if (!cancelled) setAutoLaunching(false);
-      };
-      void runAutoStart();
-      return () => {
-        cancelled = true;
-      };
-    }, [step, takePhoto])
+      return () => {};
+    }, [])
   );
 
   useEffect(() => {
@@ -581,16 +632,54 @@ export default function ScanScreen() {
   async function takePhoto() {
     scanFlowBusyRef.current = true;
     await userSetItem(STORAGE_SCAN_CAMERA_SESSION, '1').catch(() => {});
+    await userSetItem(STORAGE_SCAN_CAMERA_SESSION_AT, String(Date.now())).catch(() => {});
     try {
       const uriScanned = await scanDocumentWithFallback();
       if (!uriScanned) {
+        if (launchedFromCt) {
+          skipNextAutoScanRef.current = true;
+          await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
+          router.replace(returnTo as any);
+          return;
+        }
         if (Platform.OS === 'android') {
           await new Promise<void>((resolve) => setTimeout(resolve, 450));
           await tryRecoverPendingCameraCapture();
         }
         setStep('idle');
-        setAutoLaunching(false);
         Alert.alert('Scan interrompu', 'Aucune photo reçue. Réessayez le scan.');
+        return;
+      }
+      if (launchedFromCt) {
+        setUri(uriScanned);
+        setBase64('');
+        setStep('preview');
+        return;
+      }
+      const forcedTargetRaw = await userGetItem(STORAGE_SCAN_FORCED_TARGET);
+      const forcedTarget = typeof forcedTargetRaw === 'string' ? forcedTargetRaw.trim().toLowerCase() : '';
+      if (forcedTarget === 'permis') {
+        skipNextAutoScanRef.current = true;
+        await userSetItem(STORAGE_PENDING_PERMIS_FROM_SCAN, uriScanned);
+        await userRemoveItem(STORAGE_SCAN_FORCED_TARGET).catch(() => {});
+        await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
+        router.replace({
+          pathname: '/scan_permis',
+          params: { fromGlobalScan: '1', pendingFromScan: '1', flow: 'create' },
+        });
+        resetAll();
+        return;
+      }
+      if (forcedTarget === 'cg') {
+        skipNextAutoScanRef.current = true;
+        await userSetItem(STORAGE_PENDING_CG_FROM_SCAN, uriScanned);
+        await userRemoveItem(STORAGE_SCAN_FORCED_TARGET).catch(() => {});
+        await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
+        router.replace({
+          pathname: '/scan_cg',
+          params: { fromGlobalScan: '1', pendingFromScan: '1', flow: 'create' },
+        });
+        resetAll();
         return;
       }
       await processCapturedUri(uriScanned);
@@ -604,12 +693,68 @@ export default function ScanScreen() {
     } finally {
       scanFlowBusyRef.current = false;
       await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION).catch(() => {});
+      await userRemoveItem(STORAGE_SCAN_CAMERA_SESSION_AT).catch(() => {});
+      await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
     }
   }
 
   const runAnalysis = useCallback(async () => {
-    await analyzeCaptured(base64);
-  }, [analyzeCaptured, base64]);
+    if (!uri) {
+      Alert.alert('Erreur', 'Photo manquante.');
+      return;
+    }
+    setStep('analyzing');
+    try {
+      const normalized = await (await import('../../services/documentScan')).normalizeDocumentCapture(uri, {
+        includeBase64: true,
+        quality: 0.92,
+        smartDocument: false,
+        autoCropA4: false,
+      });
+      setUri(normalized.uri);
+      setBase64(normalized.base64 ?? '');
+      await analyzeCaptured(normalized.base64 ?? '');
+    } catch (e) {
+      console.log('[Scan] runAnalysis failed', e);
+      setSuggestedId(2);
+      setSelectedId(2);
+      setAiReason("Analyse indisponible. Choisissez la section manuellement.");
+      setStep('pick');
+    }
+  }, [analyzeCaptured, uri]);
+
+  const continueWithoutAi = useCallback(() => {
+    setSuggestedId(2);
+    setSelectedId(2);
+    setAiReason("Mode rapide activé: choisissez la section manuellement.");
+    setStep('pick');
+  }, []);
+
+  const persistCtQuickFromSource = useCallback(async () => {
+    if (!uri) {
+      Alert.alert('Erreur', 'Photo manquante.');
+      return;
+    }
+    try {
+      skipNextAutoScanRef.current = true;
+      await userSetItem(STORAGE_PENDING_CT_FROM_SCAN, uri);
+      await syncScanDossierToSupabase({
+        vehicleId: activeVehicleId,
+        docType: 'controle_technique',
+        title: 'CT — capture directe',
+        payload: { imageUri: uri, flow: 'ct_quick_confirm' },
+      });
+      router.replace({
+        pathname: '/ct',
+        params: { fromGlobalScan: '1', pendingFromScan: '1' },
+      } as any);
+      await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
+      resetAll();
+    } catch (e) {
+      console.log('[Scan][CT] quick persist failed', e);
+      Alert.alert('Erreur', "Impossible de créer le dossier CT.");
+    }
+  }, [activeVehicleId, resetAll, router, uri]);
 
   const goIntake = () => {
     const c = SCAN_CASES.find((x) => x.id === selectedId);
@@ -639,10 +784,11 @@ export default function ScanScreen() {
               title: 'Permis (depuis scan)',
               payload: { imageUri: uri, aiReason, aiInsights, suggestedId, selectedId, flow: 'scan_permis' },
             });
-            router.push({
+            router.replace({
               pathname: '/scan_permis',
               params: { fromGlobalScan: '1', pendingFromScan: '1', flow: 'create' },
             });
+            await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
             resetAll();
             return;
           }
@@ -655,10 +801,11 @@ export default function ScanScreen() {
               title: 'Carte grise (depuis scan)',
               payload: { imageUri: uri, aiReason, aiInsights, suggestedId, selectedId, flow: 'scan_cg' },
             });
-            router.push({
+            router.replace({
               pathname: '/scan_cg',
               params: { fromGlobalScan: '1', pendingFromScan: '1', flow: 'create' },
             });
+            await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
             resetAll();
             return;
           }
@@ -687,17 +834,23 @@ export default function ScanScreen() {
             payload: { folder: newDoc, aiReason, aiInsights, suggestedId, selectedId },
           });
           Alert.alert('Enregistré', 'Document ajouté à Mes documents.');
-          router.push('/docs');
+          router.replace('/docs');
+          await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
           break;
         }
         case 'factures': {
           const nowTs = Date.now();
+          const adresse = composeAddressParts(facAddressParts) || 'À compléter';
           const row: FactureRow = {
             id: Date.now().toString(),
             titre: facTitre.trim() || 'Dépense',
             garage: facGarage.trim() || 'À compléter',
-            adresse: 'À compléter',
-            date: facDate.trim() || '—',
+            adresse,
+            numero: facAddressParts.numero.trim(),
+            rue: facAddressParts.rue.trim(),
+            ville: facAddressParts.ville.trim(),
+            dep: facAddressParts.dep.trim(),
+            date: formatDateParts(facDateParts) || '—',
             km: facKm.trim() || '0',
             prixTTC: facPrix.trim() || '0',
             details: facDetails.trim() || 'Saisie rapide depuis le scan.',
@@ -716,7 +869,8 @@ export default function ScanScreen() {
             payload: { row, aiReason, aiInsights, suggestedId, selectedId },
           });
           Alert.alert('Enregistré', 'Dépense enregistrée.');
-          router.push('/factures');
+          router.replace('/factures');
+          await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
           break;
         }
         case 'entretien': {
@@ -756,7 +910,8 @@ export default function ScanScreen() {
             payload: { line, imageUri: uri, aiReason, aiInsights, suggestedId, selectedId },
           });
           Alert.alert('Enregistré', 'Note ajoutée au carnet (section Phares / commentaire).');
-          router.push('/entretien');
+          router.replace('/entretien');
+          await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
           break;
         }
         case 'diagnostics': {
@@ -780,7 +935,8 @@ export default function ScanScreen() {
             payload: { item, aiReason, aiInsights, suggestedId, selectedId },
           });
           Alert.alert('Enregistré', 'Élément enregistré dans Diagnostics.');
-          router.push('/diagnostics');
+          router.replace('/diagnostics');
+          await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
           break;
         }
         case 'ct': {
@@ -792,10 +948,11 @@ export default function ScanScreen() {
             title: 'CT — analyse après scan',
             payload: { imageUri: uri, aiReason, aiInsights, suggestedId, selectedId, pendingRoute: '/ct' },
           });
-          router.push({
+          router.replace({
             pathname: '/ct',
             params: { fromGlobalScan: '1', pendingFromScan: '1' },
           });
+          await userRemoveItem(STORAGE_SCAN_FLOW_LOCK).catch(() => {});
           resetAll();
           return;
         }
@@ -890,6 +1047,8 @@ export default function ScanScreen() {
               multiline
               value={entNotes}
               onChangeText={setEntNotes}
+              autoCapitalize="sentences"
+              autoCorrect
             />
           </>
         )}
@@ -912,6 +1071,8 @@ export default function ScanScreen() {
               multiline
               value={diagNotes}
               onChangeText={setDiagNotes}
+              autoCapitalize="sentences"
+              autoCorrect
             />
           </>
         )}
@@ -921,15 +1082,48 @@ export default function ScanScreen() {
             <Text style={styles.label}>Intitulé</Text>
             <TextInput style={styles.input} value={facTitre} onChangeText={setFacTitre} placeholderTextColor="#64748b" />
             <Text style={styles.label}>Garage / lieu</Text>
-            <AddressAutocompleteInput
+            <TextInput
+              style={styles.input}
               value={facGarage}
               onChangeText={setFacGarage}
-              placeholder="Adresse du garage / lieu"
-              inputStyle={styles.input}
+              placeholder="Nom du garage"
               placeholderTextColor="#64748b"
             />
+            <Text style={styles.label}>Adresse</Text>
+            <AddressPartsAutocompleteInput value={facAddressParts} onChange={setFacAddressParts} inputStyle={styles.input} />
             <Text style={styles.label}>Date (JJ/MM/AAAA)</Text>
-            <TextInput style={styles.input} value={facDate} onChangeText={setFacDate} placeholderTextColor="#64748b" />
+            <View style={styles.datePartsWrap}>
+              <TextInput
+                style={[styles.input, styles.datePartInput]}
+                value={facDateParts.day}
+                onChangeText={(v) => setFacDateParts((p) => ({ ...p, day: v.replace(/\D/g, '').slice(0, 2) }))}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                maxLength={2}
+                placeholder="JJ"
+                placeholderTextColor="#64748b"
+              />
+              <TextInput
+                style={[styles.input, styles.datePartInput]}
+                value={facDateParts.month}
+                onChangeText={(v) => setFacDateParts((p) => ({ ...p, month: v.replace(/\D/g, '').slice(0, 2) }))}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                maxLength={2}
+                placeholder="MM"
+                placeholderTextColor="#64748b"
+              />
+              <TextInput
+                style={[styles.input, styles.datePartYearInput]}
+                value={facDateParts.year}
+                onChangeText={(v) => setFacDateParts((p) => ({ ...p, year: v.replace(/\D/g, '').slice(0, 4) }))}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="AAAA"
+                placeholderTextColor="#64748b"
+              />
+            </View>
             <Text style={styles.label}>Km</Text>
             <TextInput
               style={styles.input}
@@ -953,6 +1147,8 @@ export default function ScanScreen() {
               value={facDetails}
               onChangeText={setFacDetails}
               placeholderTextColor="#64748b"
+              autoCapitalize="sentences"
+              autoCorrect
             />
           </>
         )}
@@ -995,33 +1191,56 @@ export default function ScanScreen() {
           { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8 },
         ]}
       >
-        {step === 'idle' &&
-          (autoLaunching ? (
-            <View style={styles.centerCol} />
-          ) : (
-            <View style={styles.centerCol}>
-              <Text style={styles.title}>Scan intelligent</Text>
-              <Text style={styles.subtitle}>
-                Lancez une nouvelle capture pour classer automatiquement votre document.
-              </Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={takePhoto} activeOpacity={0.9}>
-                <MaterialCommunityIcons name="camera" size={22} color="#0b0f14" />
-                <Text style={styles.primaryBtnText}> DÉMARRER LE SCAN</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.ghostBtn} onPress={() => router.replace({ pathname: '/(tabs)' } as any)}>
-                <Text style={styles.ghostBtnText}>RETOUR ACCUEIL</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+        {step === 'idle' && (
+          <View style={styles.centerCol}>
+            <Text style={styles.title}>Scan intelligent</Text>
+            <Text style={styles.subtitle}>
+              Lancez une nouvelle capture pour classer automatiquement votre document.
+            </Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={takePhoto} activeOpacity={0.9}>
+              <MaterialCommunityIcons name="camera" size={22} color="#0b0f14" />
+              <Text style={styles.primaryBtnText}> DÉMARRER LE SCAN</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.ghostBtn}
+              onPress={leaveScan}
+            >
+              <Text style={styles.ghostBtnText}>{launchedFromCt ? 'RETOUR CT' : 'RETOUR'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {step === 'preview' && uri ? (
           <ScrollView contentContainerStyle={styles.previewBox} keyboardDismissMode="on-drag" scrollEnabled={false}>
-            <Text style={styles.title}>Aperçu</Text>
+            <Text style={styles.title}>{launchedFromCt ? 'Aperçu CT' : 'Aperçu'}</Text>
             <Image source={{ uri }} style={styles.previewImg} />
-            <TouchableOpacity style={styles.primaryBtn} onPress={runAnalysis} activeOpacity={0.9}>
-              <MaterialCommunityIcons name="robot-outline" size={22} color="#0b0f14" />
-              <Text style={styles.primaryBtnText}> ANALYSER AVEC L’IA</Text>
-            </TouchableOpacity>
+            {launchedFromCt ? (
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() =>
+                  Alert.alert('Créer le dossier CT ?', 'Confirmer la photo et créer le dossier contrôle technique ?', [
+                    { text: 'Annuler', style: 'cancel' },
+                    { text: 'Confirmer', onPress: () => void persistCtQuickFromSource() },
+                  ])
+                }
+                activeOpacity={0.9}
+              >
+                <MaterialCommunityIcons name="check-circle-outline" size={22} color="#0b0f14" />
+                <Text style={styles.primaryBtnText}> CONFIRMER ET CRÉER LE DOSSIER</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <Text style={styles.afterScanPrompt}>Photo capturée. Que voulez-vous faire ?</Text>
+                <TouchableOpacity style={styles.primaryBtn} onPress={continueWithoutAi} activeOpacity={0.9}>
+                  <MaterialCommunityIcons name="folder-plus-outline" size={22} color="#0b0f14" />
+                  <Text style={styles.primaryBtnText}> CRÉER UN DOSSIER</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.secondaryActionBtn} onPress={runAnalysis} activeOpacity={0.9}>
+                  <MaterialCommunityIcons name="robot-outline" size={18} color="#cbd5e1" />
+                  <Text style={styles.secondaryActionBtnText}>Analyser avec l'IA (optionnel)</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => setStep('framing')}>
               <Text style={styles.secondaryBtnText}>Reprendre la photo</Text>
             </TouchableOpacity>
@@ -1113,10 +1332,31 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: '#0b0f14', fontWeight: '900', fontSize: 13, letterSpacing: 0.3 },
   secondaryBtn: { marginTop: 10, padding: 10 },
   secondaryBtnText: { color: '#94a3b8', fontWeight: '600', fontSize: 13 },
+  secondaryActionBtn: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: '#111827',
+  },
+  secondaryActionBtnText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12.5 },
   ghostBtn: { marginTop: 12, padding: 8 },
   ghostBtnText: { color: '#64748b', fontWeight: '600', fontSize: 13 },
   previewBox: { alignItems: 'stretch', width: '100%' },
   previewImg: { width: '100%', height: H * 0.38, borderRadius: 12, marginBottom: 14, backgroundColor: '#111827' },
+  afterScanPrompt: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 2,
+    fontWeight: '700',
+  },
   centerCol: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   analyzingTxt: { color: '#94a3b8', marginTop: 16, fontSize: 14 },
   aiBubble: {
@@ -1172,6 +1412,21 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
     fontSize: 14,
     marginBottom: 2,
+  },
+  datePartsWrap: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 2,
+  },
+  datePartInput: {
+    flex: 1,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  datePartYearInput: {
+    flex: 1.4,
+    textAlign: 'center',
+    fontWeight: '700',
   },
   inputMulti: { minHeight: 100, textAlignVertical: 'top' },
   chipScroll: { marginBottom: 8 },

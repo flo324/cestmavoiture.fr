@@ -23,6 +23,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatFrDateInput } from '../../components/SmartDateInput';
 import { useKilometrage } from '../../context/KilometrageContext';
 import { useVehicle } from '../../context/VehicleContext';
 import { PremiumHeroBanner } from '../../components/PremiumHeroBanner';
@@ -1056,9 +1057,10 @@ export default function EntretienScreen() {
                           placeholderTextColor="#64748b"
                           keyboardType={pneusCurrentStep.keyboard ?? 'default'}
                           value={String(modules.pneus[pneusCurrentStep.key] ?? '')}
-                          onChangeText={(v) =>
-                            setModules((p) => ({ ...p, pneus: { ...p.pneus, [pneusCurrentStep.key]: v } }))
-                          }
+                          onChangeText={(v) => {
+                            const nextValue = pneusCurrentStep.key === 'dateAchat' ? formatFrDateInput(v) : v;
+                            setModules((p) => ({ ...p, pneus: { ...p.pneus, [pneusCurrentStep.key]: nextValue } }));
+                          }}
                           returnKeyType="done"
                           onSubmitEditing={goNextPneusWizard}
                         />
@@ -1103,7 +1105,16 @@ export default function EntretienScreen() {
                 </TouchableOpacity>
 
                 <Text style={styles.label}>Date achat (jj/mm/aaaa)</Text>
-                <TextInput style={styles.input} value={modules.batterie.dateAchat} onChangeText={(v) => setModules((p) => ({ ...p, batterie: { ...p.batterie, dateAchat: v } }))} />
+                <TextInput
+                  style={styles.input}
+                  value={modules.batterie.dateAchat}
+                  onChangeText={(v) =>
+                    setModules((p) => ({ ...p, batterie: { ...p.batterie, dateAchat: formatFrDateInput(v) } }))
+                  }
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  maxLength={10}
+                />
                 <Text style={styles.label}>Modele batterie</Text>
                 <TextInput style={styles.input} value={modules.batterie.modele} onChangeText={(v) => setModules((p) => ({ ...p, batterie: { ...p.batterie, modele: v } }))} />
                 <Text style={styles.label}>Prix</Text>

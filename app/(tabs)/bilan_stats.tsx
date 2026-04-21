@@ -5,7 +5,8 @@ import { BackHandler, ImageBackground, Pressable, ScrollView, StyleSheet, Text, 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { OttoDossierFrame } from '../../components/OttoDossierFrame';
-import { userSetItem } from '../../services/userStorage';
+import { STORAGE_ESSENCE_LOGS } from '../../constants/depensesConstants';
+import { userGetItem, userSetItem } from '../../services/userStorage';
 
 const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
 const BILAN_BG = {
@@ -18,6 +19,8 @@ export default function BilanStatsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const allowLeaveRef = useRef(false);
+  const [essenceMonth, setEssenceMonth] = React.useState(0);
+  const [essenceYear, setEssenceYear] = React.useState(0);
 
   const goToFolders = useCallback(() => {
     allowLeaveRef.current = true;
@@ -50,6 +53,33 @@ export default function BilanStatsScreen() {
     });
     return unsubscribe;
   }, [goToFolders, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        try {
+          const raw = await userGetItem(STORAGE_ESSENCE_LOGS);
+          const parsed = raw ? (JSON.parse(raw) as { amount: number; createdAt: number }[]) : [];
+          const now = new Date();
+          let month = 0;
+          let year = 0;
+          for (const item of parsed) {
+            if (!Number.isFinite(item?.amount) || !Number.isFinite(item?.createdAt)) continue;
+            const d = new Date(item.createdAt);
+            if (d.getFullYear() === now.getFullYear()) {
+              year += item.amount;
+              if (d.getMonth() === now.getMonth()) month += item.amount;
+            }
+          }
+          setEssenceMonth(Math.round(month * 100) / 100);
+          setEssenceYear(Math.round(year * 100) / 100);
+        } catch {
+          setEssenceMonth(0);
+          setEssenceYear(0);
+        }
+      })();
+    }, [])
+  );
 
   return (
     <OttoDossierFrame>
@@ -107,6 +137,26 @@ export default function BilanStatsScreen() {
             <Text style={[styles.sub, styles.subPhoto, styles.textPhoto]}>Historique, rappels et suivi des actions recommandées.</Text>
           </View>
         </Pressable>
+
+        <Pressable style={({ pressed }) => [styles.card, pressed && styles.scaleDown]} onPress={() => router.push('/essence_stats')}>
+          <ImageBackground source={{ uri: BILAN_BG.stats }} style={styles.cardPhoto} imageStyle={styles.cardPhotoImage}>
+            <LinearGradient
+              colors={['rgba(8,15,28,0.52)', 'rgba(8,15,28,0.18)', 'rgba(8,15,28,0.62)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.cardPhotoOverlay}
+            />
+          </ImageBackground>
+          <View style={[styles.iconWrap, styles.iconWrapPhoto]}>
+            <MaterialCommunityIcons name="gas-station" size={22} color="#e2e8f0" />
+          </View>
+          <View style={styles.textCol}>
+            <Text style={[styles.title, styles.textPhoto]}>Essence par mois et par an</Text>
+            <Text style={[styles.sub, styles.subPhoto, styles.textPhoto]}>
+              Mois en cours: {essenceMonth.toFixed(2)} € • Année en cours: {essenceYear.toFixed(2)} €
+            </Text>
+          </View>
+        </Pressable>
       </ScrollView>
     </OttoDossierFrame>
   );
@@ -118,6 +168,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     gap: 10,
   },
+  scaleDown: { transform: [{ scale: 0.992 }] },
   card: {
     minHeight: 92,
     borderRadius: 16,

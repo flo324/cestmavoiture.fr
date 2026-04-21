@@ -11,6 +11,31 @@ import { ScanProvider } from '../context/ScanContext';
 import { ThemeProvider } from '../context/ThemeContext';
 import { logGoogleGenerativeKeyHintOnce } from '../services/googleGenerativeApiKey';
 
+try {
+  // Guard to avoid crashing old dev clients missing native notifications module.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const Notifications = require('expo-notifications') as {
+    setNotificationHandler: (args: {
+      handleNotification: () => Promise<{
+        shouldShowBanner: boolean;
+        shouldShowList: boolean;
+        shouldPlaySound: boolean;
+        shouldSetBadge: boolean;
+      }>;
+    }) => void;
+  };
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+} catch {
+  // Old native binary: notifications will be enabled after rebuild/install.
+}
+
 if (__DEV__) {
   LogBox.ignoreLogs(['Unable to activate keep awake']);
   const g = globalThis as typeof globalThis & {

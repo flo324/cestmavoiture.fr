@@ -4,15 +4,15 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { User } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Dimensions, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Easing, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, Line, RadialGradient, Stop } from 'react-native-svg';
 
-import { userSetItem } from '../services/userStorage';
+import { userRemoveItem, userSetItem } from '../services/userStorage';
 
 const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
 const SCREEN_H = Dimensions.get('window').height;
-const FLIP_STAGE_MIN_H = Math.min(Math.max(SCREEN_H * 0.5, 400), 560);
+const FLIP_STAGE_MIN_H = Math.min(Math.max(SCREEN_H * 0.5 + 18, 418), 578);
 
 type OttoDossierFrameProps = {
   children: React.ReactNode;
@@ -61,6 +61,11 @@ export function OttoDossierFrame({ children }: OttoDossierFrameProps) {
     router.replace('/(tabs)');
   };
 
+  const goHome = () => {
+    void userRemoveItem(RETURN_TO_FOLDERS_FLAG);
+    router.replace('/(tabs)');
+  };
+
   return (
     <SafeAreaView style={styles.safeRoot} edges={['top', 'left', 'right', 'bottom']}>
       <LinearGradient
@@ -70,33 +75,53 @@ export function OttoDossierFrame({ children }: OttoDossierFrameProps) {
         style={styles.bgGlow}
       />
 
-      <View style={styles.layer}>
+      <KeyboardAvoidingView
+        style={styles.layer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+      >
         <View style={styles.mainColumn}>
           <View style={styles.topBar}>
-            <View style={styles.logoWrap}>
-              <Text style={styles.logoOttoBase}>OTTO</Text>
-              <Text style={styles.logoOtto}>OTTO</Text>
-              <Text style={styles.logoOttoShine}>OTTO</Text>
-              <View style={styles.logoCutOne} pointerEvents="none" />
-              <View style={styles.logoCutTwo} pointerEvents="none" />
-              <View style={styles.logoCutThree} pointerEvents="none" />
+            <View style={styles.topBarLeftSlot}>
+              <Pressable
+                style={({ pressed }) => [styles.profilBtn, pressed && styles.profilBtnPressed]}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  router.push('/profil');
+                }}
+              >
+                <View style={styles.profilAvatar}>
+                  <User size={20} color="#e2e8f0" />
+                </View>
+                <Text style={styles.profilLabel}>Profil</Text>
+              </Pressable>
             </View>
-
-            <Pressable
-              style={({ pressed }) => [styles.profilBtn, pressed && styles.profilBtnPressed]}
-              onPress={() => {
-                void Haptics.selectionAsync();
-                router.push('/profil');
-              }}
-            >
-              <View style={styles.profilAvatar}>
-                <User size={20} color="#e2e8f0" />
+            <View pointerEvents="none" style={styles.topBarCenterLogo}>
+              <View style={styles.logoPremiumWrap}>
+                <View style={styles.logoWheel} />
+                <View style={styles.logoWheelInner} />
+                <View style={styles.logoWordRow}>
+                  <Text style={[styles.logoChar, styles.logoCharO]}>O</Text>
+                  <Text style={[styles.logoChar, styles.logoCharT]}>T</Text>
+                  <Text style={[styles.logoChar, styles.logoCharT]}>T</Text>
+                  <Text style={[styles.logoChar, styles.logoCharO]}>O</Text>
+                </View>
               </View>
-              <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>PRO</Text>
-              </View>
-              <Text style={styles.profilLabel}>Profil</Text>
-            </Pressable>
+            </View>
+            <View style={styles.topBarRightSlot}>
+              <Pressable
+                style={({ pressed }) => [styles.notifBtn, pressed && styles.profilBtnPressed]}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                }}
+              >
+                <View style={styles.notifAvatar}>
+                  <MaterialCommunityIcons name="bell-outline" size={19} color="#e2e8f0" />
+                </View>
+                <View style={styles.notifDot} />
+                <Text style={styles.notifLabel}>Notification</Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.cardSection}>
@@ -174,9 +199,41 @@ export function OttoDossierFrame({ children }: OttoDossierFrameProps) {
                 />
               </Svg>
             </Animated.View>
-            <Text style={styles.scanFabLetter}>O</Text>
+            <Text style={styles.scanFabInnerLabel}>{`OTTO\nSCAN`}</Text>
           </Pressable>
           <View style={styles.scanDockCard}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.01)', 'rgba(0,0,0,0.16)']}
+              locations={[0, 0.45, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.scanDockCarbonA}
+            />
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(0,0,0,0.18)', 'rgba(255,255,255,0.02)', 'rgba(0,0,0,0.18)']}
+              locations={[0, 0.52, 1]}
+              start={{ x: 1, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.scanDockCarbonB}
+            />
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(255,255,255,0.06)', 'rgba(0,0,0,0.02)', 'rgba(255,255,255,0.06)']}
+              locations={[0, 0.5, 1]}
+              start={{ x: 0, y: 0.18 }}
+              end={{ x: 1, y: 0.82 }}
+              style={styles.scanDockCarbonC}
+            />
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(0,0,0,0.2)', 'rgba(255,255,255,0.01)', 'rgba(0,0,0,0.2)']}
+              locations={[0, 0.48, 1]}
+              start={{ x: 1, y: 0.16 }}
+              end={{ x: 0, y: 0.84 }}
+              style={styles.scanDockCarbonD}
+            />
             <LinearGradient
               pointerEvents="none"
               colors={['rgba(255,255,255,0.24)', 'rgba(255,255,255,0.03)', 'rgba(255,255,255,0)']}
@@ -185,10 +242,35 @@ export function OttoDossierFrame({ children }: OttoDossierFrameProps) {
               end={{ x: 0.85, y: 1 }}
               style={styles.scanDockSheen}
             />
-            <Text style={styles.scanCaption}>OTTO SCAN</Text>
+            <View style={styles.dockIconRow}>
+              <Pressable style={styles.dockIconAction} onPress={goFolders}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'rgba(2,6,23,0.32)']}
+                  locations={[0, 0.45, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.dockIconBg}
+                />
+                <MaterialCommunityIcons name="folder-multiple" size={20} color="rgba(226,232,240,0.9)" />
+                <Text style={styles.dockIconLabel}>DOSSIERS</Text>
+              </Pressable>
+              <Pressable style={styles.dockIconAction} onPress={goHome}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'rgba(2,6,23,0.32)']}
+                  locations={[0, 0.45, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.dockIconBg}
+                />
+                <MaterialCommunityIcons name="home-variant" size={20} color="rgba(226,232,240,0.9)" />
+                <Text style={styles.dockIconLabel}>ACCUEIL</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -205,6 +287,24 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 10,
+    minHeight: 68,
+  },
+  topBarLeftSlot: {
+    width: 92,
+    alignItems: 'flex-start',
+    paddingLeft: 7,
+  },
+  topBarRightSlot: {
+    width: 92,
+    alignItems: 'flex-end',
+  },
+  topBarCenterLogo: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -89,
+    width: 178,
+    top: 12,
+    alignItems: 'center',
   },
   logoWrap: { position: 'relative', alignSelf: 'flex-start', justifyContent: 'center' },
   logoOttoBase: {
@@ -288,20 +388,82 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.25)',
   },
-  proBadge: {
-    marginTop: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: '#0f172a',
-  },
-  proBadgeText: {
-    color: '#fff',
-    fontWeight: '900',
-    fontSize: 9,
-    letterSpacing: 0.5,
-  },
   profilLabel: { marginTop: 4, color: '#f8fafc', fontSize: 11, fontWeight: '700' },
+  notifBtn: { alignItems: 'center' },
+  notifAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(148,163,184,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  notifDot: {
+    position: 'absolute',
+    top: 2,
+    right: 22,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#38bdf8',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  notifLabel: { marginTop: 4, color: '#f8fafc', fontSize: 11, fontWeight: '700' },
+  logoPremiumWrap: {
+    width: 178,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  logoWheel: {
+    position: 'absolute',
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    borderWidth: 5,
+    borderColor: 'rgba(8,15,28,0.78)',
+    backgroundColor: 'rgba(51,65,85,0.35)',
+    top: -12,
+  },
+  logoWheelInner: {
+    position: 'absolute',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 2,
+    borderColor: 'rgba(148,163,184,0.65)',
+    backgroundColor: 'rgba(15,23,42,0.16)',
+    top: 0,
+  },
+  logoWordRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    columnGap: 3,
+  },
+  logoChar: {
+    fontSize: 34,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: 0.6,
+  },
+  logoCharO: {
+    color: '#7dd3fc',
+    marginTop: 5,
+    textShadowColor: 'rgba(125,211,252,0.85)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+  },
+  logoCharT: {
+    color: '#e2e8f0',
+    textShadowColor: 'rgba(226,232,240,0.45)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
+  },
   cardSection: {
     flex: 1,
     minHeight: 0,
@@ -356,8 +518,8 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   dock: {
-    marginTop: 12,
-    height: 145,
+    marginTop: 2,
+    height: 126,
     marginHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -368,12 +530,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    top: 50,
+    top: 14,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
-    backgroundColor: 'rgba(8, 17, 35, 0.96)',
+    backgroundColor: 'rgba(7, 12, 19, 0.98)',
     borderWidth: 1,
     borderColor: 'rgba(93, 173, 255, 0.32)',
     alignItems: 'center',
@@ -384,9 +546,54 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     opacity: 0.95,
   },
+  scanDockCarbonA: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.95,
+  },
+  scanDockCarbonB: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.85,
+  },
+  scanDockCarbonC: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.65,
+  },
+  scanDockCarbonD: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.55,
+  },
+  dockIconRow: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  dockIconAction: {
+    width: 86,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+    backgroundColor: 'rgba(2,6,23,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  dockIconBg: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  dockIconLabel: {
+    marginTop: 4,
+    color: 'rgba(226,232,240,0.84)',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
   scanFab: {
     position: 'absolute',
-    top: -7,
+    top: 24,
     width: 94,
     height: 94,
     borderRadius: 47,
@@ -409,26 +616,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scanFabLetter: {
+  scanFabInnerLabel: {
     color: '#ffffff',
-    fontSize: 44,
+    fontSize: 12,
+    lineHeight: 13,
     fontWeight: '900',
-    fontStyle: 'italic',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
+    textAlign: 'center',
     textShadowColor: 'rgba(125,211,252,0.9)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 9,
-    marginTop: -2,
+    marginTop: 2,
   },
   scanFabPressed: { opacity: 0.97, transform: [{ scale: 0.985 }] },
-  scanCaption: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 1,
-    marginTop: 4,
-    textShadowColor: 'rgba(125,211,252,0.9)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
-  },
 });

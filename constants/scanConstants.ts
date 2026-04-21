@@ -15,6 +15,10 @@ export const STORAGE_PENDING_CT_FROM_SCAN = '@otto_pending_ct_image_uri_v1';
 
 export const STORAGE_PENDING_PERMIS_FROM_SCAN = '@otto_pending_permis_image_uri_v1';
 export const STORAGE_PENDING_CG_FROM_SCAN = '@otto_pending_cg_image_uri_v1';
+export const STORAGE_SCAN_FORCED_TARGET = '@otto_scan_forced_target_v1';
+export const STORAGE_SCAN_FLOW_LOCK = '@otto_scan_flow_lock_v1';
 
 /** Session caméra / scanner : si l’app Android est recyclée, on récupère le résultat via ImagePicker.getPendingResultAsync. */
 export const STORAGE_SCAN_CAMERA_SESSION = '@otto_scan_camera_session_v1';
+/** Timestamp associé à la session caméra pour éviter les redirections scan sur session périmée. */
+export const STORAGE_SCAN_CAMERA_SESSION_AT = '@otto_scan_camera_session_at_v1';

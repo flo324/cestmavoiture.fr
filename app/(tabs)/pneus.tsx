@@ -4,6 +4,7 @@ import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, BackHandler, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { formatFrDateInput } from '../../components/SmartDateInput';
 import { useKilometrage } from '../../context/KilometrageContext';
 import { userGetItem, userSetItem } from '../../services/userStorage';
 
@@ -272,7 +273,13 @@ export default function PneusScreen() {
             <TextInput
               style={styles.input}
               value={String(form[currentStepMeta.key] ?? '')}
-              onChangeText={(t) => setForm((prev) => ({ ...prev, [currentStepMeta.key]: t }))}
+              onChangeText={(t) => {
+                const nextValue = currentStepMeta.key === 'dateAchat' ? formatFrDateInput(t) : t;
+                setForm((prev) => ({ ...prev, [currentStepMeta.key]: nextValue }));
+                if (currentStepMeta.key === 'dateAchat' && nextValue.length === 10) {
+                  void goNext();
+                }
+              }}
               placeholder={currentStepMeta.placeholder}
               placeholderTextColor="#64748b"
               keyboardType={currentStepMeta.keyboard ?? 'default'}

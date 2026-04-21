@@ -31,6 +31,10 @@ export default function TabLayout() {
           <Tabs.Screen name="batterie" options={{ href: null }} />
           <Tabs.Screen name="carrosserie" options={{ href: null }} />
           <Tabs.Screen name="docs" options={{ href: null }} />
+          <Tabs.Screen name="depenses" options={{ href: null }} />
+          <Tabs.Screen name="essence" options={{ href: null }} />
+          <Tabs.Screen name="assurances" options={{ href: null }} />
+          <Tabs.Screen name="essence_stats" options={{ href: null }} />
           <Tabs.Screen name="diagnostics" options={{ href: null }} />
           <Tabs.Screen name="doc_detail" options={{ href: null }} />
           <Tabs.Screen name="phares" options={{ href: null }} />

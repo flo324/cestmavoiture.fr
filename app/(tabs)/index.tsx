@@ -2,7 +2,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { User } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -12,6 +11,7 @@ import {
   Image,
   ImageBackground,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -19,8 +19,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, Line, RadialGradient, Stop } from 'react-native-svg';
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { ElectricPressable } from '../../components/ElectricPressable';
+import { STORAGE_SCAN_CAMERA_SESSION, STORAGE_SCAN_CAMERA_SESSION_AT } from '../../constants/scanConstants';
 import { OTTO_THEME } from '../../constants/ottoTheme';
 import { useKilometrage } from '../../context/KilometrageContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -31,11 +33,13 @@ import { userGetItem, userRemoveItem } from '../../services/userStorage';
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
 /** Hauteur mini du bloc flip (carte plus grande, recto + verso). */
-const FLIP_STAGE_MIN_H = Math.min(Math.max(SCREEN_H * 0.5, 400), 560);
+const FLIP_STAGE_MIN_H = Math.min(Math.max(SCREEN_H * 0.5 + 18, 418), 578);
 const FLIP_DURATION_MS = 420;
 const FLIP_EASING = Easing.out(Easing.cubic);
+const FOLDER_SPRING = { damping: 15, stiffness: 120, mass: 1 } as const;
 const WEBKIT_BACKFACE_HIDDEN = { WebkitBackfaceVisibility: 'hidden' } as unknown as ViewStyle;
 const RETURN_TO_FOLDERS_FLAG = '@otto_open_folders_on_return';
+const SCAN_SESSION_MAX_AGE_MS = 3 * 60 * 1000;
 const PEUGEOT_BADGE_URI =
   'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Peugeot_2021_logo.svg/512px-Peugeot_2021_logo.svg.png';
 const DOSSIER_BG = {
@@ -47,6 +51,7 @@ const DOSSIER_BG = {
     'https://images.unsplash.com/photo-1549924231-f129b911e442?auto=format&fit=crop&w=1400&q=80',
   km: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1400&q=80',
   bilan: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1400&q=80',
+  depenses: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1400&q=80',
 } as const;
 
 function parseOdometerKm(raw: string | undefined | null): number {
@@ -100,28 +105,56 @@ export default function HomeScreen() {
     lastUpdate: '-',
   });
   const [isFolderViewOpen, setIsFolderViewOpen] = useState(false);
+  const [expandedFolderKey, setExpandedFolderKey] = useState<null | 'docs' | 'usure' | 'depenses'>(null);
+  const closeFoldersLockRef = useRef(false);
+  const closeFoldersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const folderAnim = useSharedValue(0);
 
   useEffect(() => {
     if (params.folders === '1') {
       setIsFolderViewOpen(true);
+      folderAnim.value = 1;
     }
-  }, [params.folders]);
+  }, [folderAnim, params.folders]);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
+        const [pendingScanSession, pendingScanSessionAtRaw] = await Promise.all([
+          userGetItem(STORAGE_SCAN_CAMERA_SESSION),
+          userGetItem(STORAGE_SCAN_CAMERA_SESSION_AT),
+        ]);
+        if (cancelled) return;
+        const pendingScanSessionAt = Number(pendingScanSessionAtRaw);
+        const hasFreshPendingScanSession =
+          pendingScanSession === '1' &&
+          Number.isFinite(pendingScanSessionAt) &&
+          Date.now() - pendingScanSessionAt <= SCAN_SESSION_MAX_AGE_MS;
+
+        if (hasFreshPendingScanSession) {
+          router.replace('/scan');
+          return;
+        }
+        if (pendingScanSession === '1') {
+          await Promise.all([
+            userRemoveItem(STORAGE_SCAN_CAMERA_SESSION),
+            userRemoveItem(STORAGE_SCAN_CAMERA_SESSION_AT),
+          ]).catch(() => {});
+        }
+
         const shouldOpen = await userGetItem(RETURN_TO_FOLDERS_FLAG);
         if (cancelled) return;
         if (shouldOpen === '1') {
           setIsFolderViewOpen(true);
+          folderAnim.value = 1;
           await userRemoveItem(RETURN_TO_FOLDERS_FLAG);
         }
       })().catch(() => {});
       return () => {
         cancelled = true;
       };
-    }, [])
+    }, [folderAnim, router])
   );
 
   /** 0 = recto (véhicule), 1 = verso (dossiers) */
@@ -214,22 +247,55 @@ export default function HomeScreen() {
   }, [flipAnim, flipFace]);
 
   const openFoldersInstant = useCallback(() => {
+    if (closeFoldersTimerRef.current) {
+      clearTimeout(closeFoldersTimerRef.current);
+      closeFoldersTimerRef.current = null;
+    }
+    closeFoldersLockRef.current = false;
     flipAnim.stopAnimation();
     flipAnim.setValue(0);
     setFlipFace('front');
     flippingRef.current = false;
     flipProgressRef.current = 0;
     setIsFolderViewOpen(true);
-  }, [flipAnim]);
+    folderAnim.value = withSpring(1, FOLDER_SPRING);
+  }, [flipAnim, folderAnim]);
 
   const closeFoldersToHome = useCallback(() => {
-    setIsFolderViewOpen(false);
+    if (closeFoldersLockRef.current) return;
+    closeFoldersLockRef.current = true;
+    if (closeFoldersTimerRef.current) {
+      clearTimeout(closeFoldersTimerRef.current);
+      closeFoldersTimerRef.current = null;
+    }
     flipAnim.stopAnimation();
     flipAnim.setValue(0);
     setFlipFace('front');
+    setExpandedFolderKey(null);
     flippingRef.current = false;
     flipProgressRef.current = 0;
-  }, [flipAnim]);
+    folderAnim.value = withSpring(0, FOLDER_SPRING, (finished) => {
+      if (finished) {
+        runOnJS(setIsFolderViewOpen)(false);
+      }
+    });
+    closeFoldersTimerRef.current = setTimeout(() => {
+      // Filet de sécurité: garantit le retour accueil même si le callback spring ne remonte pas.
+      setIsFolderViewOpen(false);
+      closeFoldersLockRef.current = false;
+      closeFoldersTimerRef.current = null;
+    }, 360);
+  }, [flipAnim, folderAnim]);
+
+  useEffect(() => {
+    return () => {
+      if (closeFoldersTimerRef.current) clearTimeout(closeFoldersTimerRef.current);
+    };
+  }, []);
+
+  const toggleFolderAccordion = useCallback((key: 'docs' | 'usure' | 'depenses') => {
+    setExpandedFolderKey((prev) => (prev === key ? null : key));
+  }, []);
 
   const flipToFront = useCallback(() => {
     if (flippingRef.current) return;
@@ -386,45 +452,66 @@ export default function HomeScreen() {
     [scanArcSpin]
   );
 
+  const folderAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: folderAnim.value,
+    transform: [{ scale: 0.96 + folderAnim.value * 0.04 }],
+  }));
+
   /** Accueil : fond toujours bleu nuit ; carte véhicule blanche (maquette). */
   const homeBg = '#091a34';
 
   if (isFolderViewOpen) {
     return (
       <SafeAreaView style={[styles.safeRoot, { backgroundColor: homeBg }]} edges={['top', 'left', 'right', 'bottom']}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={['transparent', 'rgba(85, 204, 255, 0.06)', 'rgba(5, 10, 18, 0.98)']}
-          locations={[0, 0.45, 1]}
-          style={styles.bgGlow}
-        />
-        <Animated.View style={[tabEntranceStyle, { flex: 1, opacity: screenIntro }]}>
-          <View style={styles.layer}>
+        <Reanimated.View style={[styles.folderMotionLayer, folderAnimatedStyle]}>
+          <LinearGradient
+            pointerEvents="none"
+            colors={['transparent', 'rgba(85, 204, 255, 0.06)', 'rgba(5, 10, 18, 0.98)']}
+            locations={[0, 0.45, 1]}
+            style={styles.bgGlow}
+          />
+          <Animated.View style={[tabEntranceStyle, { flex: 1, opacity: screenIntro }]}>
+            <View style={styles.layer}>
             <View style={styles.mainColumn}>
               <View style={styles.topBar}>
-                <View style={styles.logoWrap}>
-                  <Text style={[styles.logoOttoBase, isLight && styles.logoOttoBaseLight]}>OTTO</Text>
-                  <Text style={[styles.logoOtto, isLight && styles.logoOttoLight]}>OTTO</Text>
-                  <Text style={[styles.logoOttoShine, isLight && styles.logoOttoShineLight]}>OTTO</Text>
-                  <View style={styles.logoCutOne} pointerEvents="none" />
-                  <View style={styles.logoCutTwo} pointerEvents="none" />
-                  <View style={styles.logoCutThree} pointerEvents="none" />
+                <View style={styles.topBarLeftSlot}>
+                  <Pressable
+                    style={({ pressed }) => [styles.profilBtn, pressed && styles.profilBtnPressed]}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                      router.push('/profil');
+                    }}
+                  >
+                    <View style={styles.profilAvatar}>
+                      <Text style={styles.profilInitials}>FD</Text>
+                    </View>
+                  </Pressable>
                 </View>
-                <Pressable
-                  style={({ pressed }) => [styles.profilBtn, pressed && styles.profilBtnPressed]}
-                  onPress={() => {
-                    void Haptics.selectionAsync();
-                    router.push('/profil');
-                  }}
-                >
-                  <View style={styles.profilAvatar}>
-                    <User size={20} color={isLight ? '#0f172a' : '#e2e8f0'} />
+                <View pointerEvents="none" style={styles.topBarCenterLogo}>
+                  <View style={styles.logoPremiumWrap}>
+                    <View style={styles.logoWheel} />
+                    <View style={styles.logoWheelInner} />
+                    <View style={styles.logoWordRow}>
+                      <Text style={[styles.logoChar, styles.logoCharO, isLight && styles.logoCharOLight]}>O</Text>
+                      <Text style={[styles.logoChar, styles.logoCharT, isLight && styles.logoCharTLight]}>T</Text>
+                      <Text style={[styles.logoChar, styles.logoCharT, isLight && styles.logoCharTLight]}>T</Text>
+                      <Text style={[styles.logoChar, styles.logoCharO, isLight && styles.logoCharOLight]}>O</Text>
+                    </View>
                   </View>
-                  <View style={styles.proBadge}>
-                    <Text style={styles.proBadgeText}>PRO</Text>
-                  </View>
-                  <Text style={[styles.profilLabel, isLight && styles.profilLabelLight]}>Profil</Text>
-                </Pressable>
+                </View>
+                <View style={styles.topBarRightSlot}>
+                  <Pressable
+                    style={({ pressed }) => [styles.notifBtn, pressed && styles.profilBtnPressed]}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                    }}
+                  >
+                    <View style={styles.notifAvatar}>
+                      <MaterialCommunityIcons name="bell-outline" size={19} color={isLight ? '#0f172a' : '#e2e8f0'} />
+                    </View>
+                    <View style={styles.notifDot} />
+                  </Pressable>
+                </View>
               </View>
 
               <View style={styles.cardSection}>
@@ -439,13 +526,17 @@ export default function HomeScreen() {
                     </Pressable>
                   </View>
                   <View style={styles.whiteCardBack}>
-                    <View style={styles.backFoldersGrid}>
+                    <ScrollView
+                      contentContainerStyle={styles.backFoldersGrid}
+                      showsVerticalScrollIndicator={false}
+                      bounces={false}
+                    >
                       <ElectricPressable
                         style={styles.docsFolderCard}
                         borderRadius={16}
                         onPress={() => {
                           void Haptics.selectionAsync();
-                          router.push('/docs');
+                          toggleFolderAccordion('docs');
                         }}
                       >
                         <ImageBackground source={{ uri: DOSSIER_BG.docs }} style={styles.folderPhoto} imageStyle={styles.folderPhotoImage}>
@@ -463,14 +554,34 @@ export default function HomeScreen() {
                           <Text style={styles.gpsFolderTitle}>MES DOCUMENTS</Text>
                           <Text style={styles.gpsFolderSub}>Permis, carte grise, CT et dossiers</Text>
                         </View>
-                        <MaterialCommunityIcons name="chevron-right" size={20} color="#f8fafc" />
+                        <MaterialCommunityIcons
+                          name={expandedFolderKey === 'docs' ? 'chevron-down' : 'chevron-right'}
+                          size={20}
+                          color="#f8fafc"
+                        />
                       </ElectricPressable>
+                      {expandedFolderKey === 'docs' ? (
+                        <View style={styles.inlineSubList}>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/scan_permis')}>
+                            <Text style={styles.inlineSubTitle}>Permis</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/scan_cg')}>
+                            <Text style={styles.inlineSubTitle}>Carte grise</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/ct')}>
+                            <Text style={styles.inlineSubTitle}>Controle technique</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                        </View>
+                      ) : null}
                       <ElectricPressable
                         style={styles.usureFolderCard}
                         borderRadius={16}
                         onPress={() => {
                           void Haptics.selectionAsync();
-                          router.push('./usure');
+                          toggleFolderAccordion('usure');
                         }}
                       >
                         <ImageBackground source={{ uri: DOSSIER_BG.usure }} style={styles.folderPhoto} imageStyle={styles.folderPhotoImage}>
@@ -488,8 +599,28 @@ export default function HomeScreen() {
                           <Text style={styles.gpsFolderTitle}>PIECES D'USURE</Text>
                           <Text style={styles.gpsFolderSub}>Phares, pneus, batterie et suivi</Text>
                         </View>
-                        <MaterialCommunityIcons name="chevron-right" size={20} color="#f8fafc" />
+                        <MaterialCommunityIcons
+                          name={expandedFolderKey === 'usure' ? 'chevron-down' : 'chevron-right'}
+                          size={20}
+                          color="#f8fafc"
+                        />
                       </ElectricPressable>
+                      {expandedFolderKey === 'usure' ? (
+                        <View style={styles.inlineSubList}>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/phares')}>
+                            <Text style={styles.inlineSubTitle}>Phares</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/pneus')}>
+                            <Text style={styles.inlineSubTitle}>Pneus</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/batterie')}>
+                            <Text style={styles.inlineSubTitle}>Batterie</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                        </View>
+                      ) : null}
                       <ElectricPressable
                         style={styles.gpsFolderCard}
                         borderRadius={16}
@@ -545,6 +676,51 @@ export default function HomeScreen() {
                         borderRadius={16}
                         onPress={() => {
                           void Haptics.selectionAsync();
+                          toggleFolderAccordion('depenses');
+                        }}
+                      >
+                        <ImageBackground source={{ uri: DOSSIER_BG.depenses }} style={styles.folderPhoto} imageStyle={styles.folderPhotoImage}>
+                          <LinearGradient
+                            colors={['rgba(8,15,28,0.52)', 'rgba(8,15,28,0.18)', 'rgba(8,15,28,0.62)']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.folderPhotoOverlay}
+                          />
+                        </ImageBackground>
+                        <View style={styles.depensesFolderIconWrap}>
+                          <MaterialCommunityIcons name="cash-multiple" size={24} color="#e2e8f0" />
+                        </View>
+                        <View style={styles.gpsFolderTextCol}>
+                          <Text style={styles.gpsFolderTitle}>MES DEPENSES</Text>
+                          <Text style={styles.gpsFolderSub}>Essence, assurances et suivi budget</Text>
+                        </View>
+                        <MaterialCommunityIcons
+                          name={expandedFolderKey === 'depenses' ? 'chevron-down' : 'chevron-right'}
+                          size={20}
+                          color="#f8fafc"
+                        />
+                      </ElectricPressable>
+                      {expandedFolderKey === 'depenses' ? (
+                        <View style={styles.inlineSubList}>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/essence')}>
+                            <Text style={styles.inlineSubTitle}>Essence</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/assurances')}>
+                            <Text style={styles.inlineSubTitle}>Assurances</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                          <Pressable style={styles.inlineSubCard} onPress={() => router.push('/factures')}>
+                            <Text style={styles.inlineSubTitle}>Reparations</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#0f172a" />
+                          </Pressable>
+                        </View>
+                      ) : null}
+                      <ElectricPressable
+                        style={styles.kmFolderCard}
+                        borderRadius={16}
+                        onPress={() => {
+                          void Haptics.selectionAsync();
                           router.push('/bilan_stats');
                         }}
                       >
@@ -565,7 +741,7 @@ export default function HomeScreen() {
                         </View>
                         <MaterialCommunityIcons name="chevron-right" size={20} color="#f8fafc" />
                       </ElectricPressable>
-                    </View>
+                    </ScrollView>
                   </View>
                 </View>
               </View>
@@ -628,9 +804,41 @@ export default function HomeScreen() {
                     />
                   </Svg>
                 </Animated.View>
-                <Text style={styles.scanFabLetter}>O</Text>
+                <Text style={styles.scanFabInnerLabel}>{`OTTO\nSCAN`}</Text>
               </Pressable>
               <View style={styles.scanDockCard}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.01)', 'rgba(0,0,0,0.16)']}
+                  locations={[0, 0.45, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.scanDockCarbonA}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(0,0,0,0.18)', 'rgba(255,255,255,0.02)', 'rgba(0,0,0,0.18)']}
+                  locations={[0, 0.52, 1]}
+                  start={{ x: 1, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.scanDockCarbonB}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0.06)', 'rgba(0,0,0,0.02)', 'rgba(255,255,255,0.06)']}
+                  locations={[0, 0.5, 1]}
+                  start={{ x: 0, y: 0.18 }}
+                  end={{ x: 1, y: 0.82 }}
+                  style={styles.scanDockCarbonC}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(0,0,0,0.2)', 'rgba(255,255,255,0.01)', 'rgba(0,0,0,0.2)']}
+                  locations={[0, 0.48, 1]}
+                  start={{ x: 1, y: 0.16 }}
+                  end={{ x: 0, y: 0.84 }}
+                  style={styles.scanDockCarbonD}
+                />
                 <LinearGradient
                   pointerEvents="none"
                   colors={['rgba(255,255,255,0.24)', 'rgba(255,255,255,0.03)', 'rgba(255,255,255,0)']}
@@ -639,11 +847,37 @@ export default function HomeScreen() {
                   end={{ x: 0.85, y: 1 }}
                   style={styles.scanDockSheen}
                 />
-                <Text style={styles.scanCaption}>OTTO SCAN</Text>
+                <View style={styles.dockIconRow}>
+                  <Pressable style={[styles.dockIconAction, styles.dockIconActionActive]} onPress={() => {}}>
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.02)', 'rgba(2,6,23,0.28)']}
+                      locations={[0, 0.45, 1]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.dockIconBg}
+                    />
+                    <MaterialCommunityIcons name="folder-multiple" size={20} color="#ffffff" />
+                    <Text style={[styles.dockIconLabel, styles.dockIconLabelActive]}>DOSSIERS</Text>
+                  </Pressable>
+                  <Pressable style={styles.dockIconAction} onPress={closeFoldersToHome}>
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'rgba(2,6,23,0.32)']}
+                      locations={[0, 0.45, 1]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.dockIconBg}
+                    />
+                    <MaterialCommunityIcons name="home-variant" size={20} color="rgba(226,232,240,0.86)" />
+                    <Text style={styles.dockIconLabel}>ACCUEIL</Text>
+                  </Pressable>
+                </View>
               </View>
             </View>
-          </View>
-        </Animated.View>
+            </View>
+          </Animated.View>
+        </Reanimated.View>
       </SafeAreaView>
     );
   }
@@ -662,29 +896,44 @@ export default function HomeScreen() {
           <View style={styles.flipFront}>
             <View style={styles.mainColumn}>
               <View style={styles.topBar}>
-                <View style={styles.logoWrap}>
-                  <Text style={[styles.logoOttoBase, isLight && styles.logoOttoBaseLight]}>OTTO</Text>
-                  <Text style={[styles.logoOtto, isLight && styles.logoOttoLight]}>OTTO</Text>
-                  <Text style={[styles.logoOttoShine, isLight && styles.logoOttoShineLight]}>OTTO</Text>
-                  <View style={styles.logoCutOne} pointerEvents="none" />
-                  <View style={styles.logoCutTwo} pointerEvents="none" />
-                  <View style={styles.logoCutThree} pointerEvents="none" />
+                <View style={styles.topBarLeftSlot}>
+                  <Pressable
+                    style={({ pressed }) => [styles.profilBtn, pressed && styles.profilBtnPressed]}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                      router.push('/profil');
+                    }}
+                  >
+                    <View style={styles.profilAvatar}>
+                      <Text style={styles.profilInitials}>FD</Text>
+                    </View>
+                  </Pressable>
                 </View>
-                <Pressable
-                  style={({ pressed }) => [styles.profilBtn, pressed && styles.profilBtnPressed]}
-                  onPress={() => {
-                    void Haptics.selectionAsync();
-                    router.push('/profil');
-                  }}
-                >
-                  <View style={styles.profilAvatar}>
-                    <User size={20} color={isLight ? '#0f172a' : '#e2e8f0'} />
+                <View pointerEvents="none" style={styles.topBarCenterLogo}>
+                  <View style={styles.logoPremiumWrap}>
+                    <View style={styles.logoWheel} />
+                    <View style={styles.logoWheelInner} />
+                    <View style={styles.logoWordRow}>
+                      <Text style={[styles.logoChar, styles.logoCharO, isLight && styles.logoCharOLight]}>O</Text>
+                      <Text style={[styles.logoChar, styles.logoCharT, isLight && styles.logoCharTLight]}>T</Text>
+                      <Text style={[styles.logoChar, styles.logoCharT, isLight && styles.logoCharTLight]}>T</Text>
+                      <Text style={[styles.logoChar, styles.logoCharO, isLight && styles.logoCharOLight]}>O</Text>
+                    </View>
                   </View>
-                  <View style={styles.proBadge}>
-                    <Text style={styles.proBadgeText}>PRO</Text>
-                  </View>
-                  <Text style={[styles.profilLabel, isLight && styles.profilLabelLight]}>Profil</Text>
-                </Pressable>
+                </View>
+                <View style={styles.topBarRightSlot}>
+                  <Pressable
+                    style={({ pressed }) => [styles.notifBtn, pressed && styles.profilBtnPressed]}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                    }}
+                  >
+                    <View style={styles.notifAvatar}>
+                      <MaterialCommunityIcons name="bell-outline" size={19} color={isLight ? '#0f172a' : '#e2e8f0'} />
+                    </View>
+                    <View style={styles.notifDot} />
+                  </Pressable>
+                </View>
               </View>
 
               <View style={styles.cardSection}>
@@ -718,7 +967,6 @@ export default function HomeScreen() {
                         borderRadius={40}
                         onPress={(e) => {
                           e.stopPropagation();
-                          openFoldersInstant();
                         }}
                       >
                         <View style={styles.vehicleBrandRow}>
@@ -734,7 +982,7 @@ export default function HomeScreen() {
                             {vehicleData.photoUri ? (
                               <>
                                 <Image source={{ uri: vehicleData.photoUri }} style={styles.vehicleImg} resizeMode="contain" />
-                                <View pointerEvents="none" style={styles.vehicleLeftEdgeMask} />
+                                <View pointerEvents="none" style={styles.vehicleLeftLineMask} />
                                 <View pointerEvents="none" style={styles.vehicleWatermarkMask} />
                               </>
                             ) : (
@@ -861,9 +1109,41 @@ export default function HomeScreen() {
                     />
                   </Svg>
                 </Animated.View>
-                <Text style={styles.scanFabLetter}>O</Text>
+                <Text style={styles.scanFabInnerLabel}>{`OTTO\nSCAN`}</Text>
               </Pressable>
               <View style={styles.scanDockCard}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.01)', 'rgba(0,0,0,0.16)']}
+                  locations={[0, 0.45, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.scanDockCarbonA}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(0,0,0,0.18)', 'rgba(255,255,255,0.02)', 'rgba(0,0,0,0.18)']}
+                  locations={[0, 0.52, 1]}
+                  start={{ x: 1, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.scanDockCarbonB}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0.06)', 'rgba(0,0,0,0.02)', 'rgba(255,255,255,0.06)']}
+                  locations={[0, 0.5, 1]}
+                  start={{ x: 0, y: 0.18 }}
+                  end={{ x: 1, y: 0.82 }}
+                  style={styles.scanDockCarbonC}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(0,0,0,0.2)', 'rgba(255,255,255,0.01)', 'rgba(0,0,0,0.2)']}
+                  locations={[0, 0.48, 1]}
+                  start={{ x: 1, y: 0.16 }}
+                  end={{ x: 0, y: 0.84 }}
+                  style={styles.scanDockCarbonD}
+                />
                 <LinearGradient
                   pointerEvents="none"
                   colors={['rgba(255,255,255,0.24)', 'rgba(255,255,255,0.03)', 'rgba(255,255,255,0)']}
@@ -872,7 +1152,32 @@ export default function HomeScreen() {
                   end={{ x: 0.85, y: 1 }}
                   style={styles.scanDockSheen}
                 />
-                <Text style={styles.scanCaption}>OTTO SCAN</Text>
+                <View style={styles.dockIconRow}>
+                  <Pressable style={styles.dockIconAction} onPress={openFoldersInstant}>
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'rgba(2,6,23,0.32)']}
+                      locations={[0, 0.45, 1]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.dockIconBg}
+                    />
+                    <MaterialCommunityIcons name="folder-multiple" size={20} color="rgba(226,232,240,0.86)" />
+                    <Text style={styles.dockIconLabel}>DOSSIERS</Text>
+                  </Pressable>
+                  <Pressable style={[styles.dockIconAction, styles.dockIconActionActive]} onPress={() => {}}>
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.02)', 'rgba(2,6,23,0.28)']}
+                      locations={[0, 0.45, 1]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.dockIconBg}
+                    />
+                    <MaterialCommunityIcons name="home-variant" size={20} color="#ffffff" />
+                    <Text style={[styles.dockIconLabel, styles.dockIconLabelActive]}>ACCUEIL</Text>
+                  </Pressable>
+                </View>
               </View>
             </View>
           </View>
@@ -885,6 +1190,9 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safeRoot: {
+    flex: 1,
+  },
+  folderMotionLayer: {
     flex: 1,
   },
   layer: {
@@ -988,12 +1296,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   backFoldersGrid: {
-    flex: 1,
     flexDirection: 'column',
     gap: 8,
     paddingHorizontal: 11,
     paddingTop: 10,
-    paddingBottom: 10,
+    paddingBottom: 20,
   },
   backFolderCard: {
     width: '100%',
@@ -1158,12 +1465,63 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(147,197,253,0.78)',
   },
+  depensesFolderIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16,185,129,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.46)',
+  },
+  inlineSubList: {
+    gap: 6,
+    marginTop: -2,
+    marginBottom: 4,
+    paddingHorizontal: 10,
+  },
+  inlineSubCard: {
+    minHeight: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.34)',
+    backgroundColor: '#f8fafc',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+  },
+  inlineSubTitle: {
+    color: '#0f172a',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.1,
+  },
   topBar: {
     position: 'relative',
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 10,
+    minHeight: 68,
+  },
+  topBarLeftSlot: {
+    width: 92,
+    alignItems: 'flex-start',
+    paddingLeft: 7,
+  },
+  topBarRightSlot: {
+    width: 92,
+    alignItems: 'flex-end',
+  },
+  topBarCenterLogo: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -89,
+    width: 178,
+    top: 12,
+    alignItems: 'center',
   },
   logoWrap: {
     position: 'relative',
@@ -1263,16 +1621,96 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.25)',
   },
-  proBadge: {
-    marginTop: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: '#0f172a',
+  profilInitials: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textAlign: 'center',
   },
-  proBadgeText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
   profilLabel: { marginTop: 4, color: OTTO_THEME.textOnDark, fontSize: 11, fontWeight: '700' },
   profilLabelLight: { color: '#0f172a' },
+  notifBtn: { alignItems: 'center' },
+  notifAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(148,163,184,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  notifDot: {
+    position: 'absolute',
+    top: 2,
+    right: 22,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#38bdf8',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  notifLabel: { marginTop: 4, color: OTTO_THEME.textOnDark, fontSize: 11, fontWeight: '700' },
+  logoPremiumWrap: {
+    width: 178,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  logoWheel: {
+    position: 'absolute',
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    borderWidth: 5,
+    borderColor: 'rgba(8,15,28,0.78)',
+    backgroundColor: 'rgba(51,65,85,0.35)',
+    top: -12,
+  },
+  logoWheelInner: {
+    position: 'absolute',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 2,
+    borderColor: 'rgba(148,163,184,0.65)',
+    backgroundColor: 'rgba(15,23,42,0.16)',
+    top: 0,
+  },
+  logoWordRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    columnGap: 3,
+  },
+  logoChar: {
+    fontSize: 34,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: 0.6,
+  },
+  logoCharO: {
+    color: '#7dd3fc',
+    marginTop: 5,
+    textShadowColor: 'rgba(125,211,252,0.85)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+  },
+  logoCharT: {
+    color: '#e2e8f0',
+    textShadowColor: 'rgba(226,232,240,0.45)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
+  },
+  logoCharOLight: {
+    color: '#52b8ee',
+  },
+  logoCharTLight: {
+    color: '#1e293b',
+  },
   whiteCard: {
     backgroundColor: '#ffffff',
     borderRadius: 40,
@@ -1331,7 +1769,7 @@ const styles = StyleSheet.create({
   vehicleImg: {
     width: '100%',
     height: '100%',
-    transform: [{ translateX: 10 }, { scale: 1.03 }],
+    transform: [{ translateX: 18 }, { scale: 1.03 }],
   },
   vehicleWatermarkMask: {
     position: 'absolute',
@@ -1342,13 +1780,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.98)',
     borderTopRightRadius: 12,
   },
-  vehicleLeftEdgeMask: {
+  vehicleLeftLineMask: {
     position: 'absolute',
     left: 0,
     top: 0,
     bottom: 0,
-    width: 10,
-    backgroundColor: 'rgba(255,255,255,0.98)',
+    width: 4,
+    backgroundColor: 'rgba(255,255,255,1)',
   },
   photoPlaceholder: { alignItems: 'center', justifyContent: 'center', padding: 20 },
   photoPlaceholderTxt: { marginTop: 6, fontSize: 12, color: '#64748b', fontWeight: '600' },
@@ -1429,8 +1867,8 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   dock: {
-    marginTop: 12,
-    height: 145,
+    marginTop: 2,
+    height: 126,
     marginHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -1441,12 +1879,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    top: 50,
+    top: 14,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
-    backgroundColor: 'rgba(8, 17, 35, 0.96)',
+    backgroundColor: 'rgba(7, 12, 19, 0.98)',
     borderWidth: 1,
     borderColor: 'rgba(93, 173, 255, 0.32)',
     alignItems: 'center',
@@ -1457,9 +1895,66 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     opacity: 0.95,
   },
+  scanDockCarbonA: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.95,
+  },
+  scanDockCarbonB: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.85,
+  },
+  scanDockCarbonC: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.65,
+  },
+  scanDockCarbonD: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.55,
+  },
+  dockIconRow: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  dockIconAction: {
+    width: 86,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+    backgroundColor: 'rgba(2,6,23,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  dockIconBg: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  dockIconActionActive: {
+    borderColor: 'rgba(125,211,252,0.72)',
+    backgroundColor: 'rgba(30,64,175,0.34)',
+    shadowColor: '#60a5fa',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  dockIconLabel: {
+    marginTop: 4,
+    color: 'rgba(226,232,240,0.84)',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  dockIconLabelActive: {
+    color: '#ffffff',
+  },
   scanFab: {
     position: 'absolute',
-    top: -7,
+    top: 24,
     width: 94,
     height: 94,
     borderRadius: 47,
@@ -1482,26 +1977,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scanFabLetter: {
+  scanFabInnerLabel: {
     color: '#ffffff',
-    fontSize: 44,
+    fontSize: 12,
+    lineHeight: 13,
     fontWeight: '900',
-    fontStyle: 'italic',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
+    textAlign: 'center',
     textShadowColor: 'rgba(125,211,252,0.9)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 9,
-    marginTop: -2,
+    marginTop: 2,
   },
   scanFabPressed: { opacity: 0.97, transform: [{ scale: 0.985 }] },
-  scanCaption: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 1,
-    marginTop: 4,
-    textShadowColor: 'rgba(125,211,252,0.9)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
-  },
 });
